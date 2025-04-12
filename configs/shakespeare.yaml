@@ -1,0 +1,13 @@
+model:
+  class_path: emrgpt.BaseGptLM
+  init_args:
+    lr: 3e-4
+    model:
+      class_path: emrgpt.model.AkGPT
+      init_args:
+        vocab_size: ...
+        n_embd: 384
+        block_size: 256
+        n_head: 6
+        n_layer: 6
+        dropout: 0.2

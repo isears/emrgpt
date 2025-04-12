@@ -1,1 +1,91 @@
 print("*** EMR GPT ***")
+
+import lightning as L
+from torch.utils.data import Dataset, DataLoader, random_split
+from typing import Optional
+import os
+import torch
+from torch.nn import functional as F
+from typing import Literal
+
+
+class BasicDM(L.LightningDataModule):
+
+    def __init__(
+        self,
+        ds: Dataset,
+        batch_size: int = 32,
+        workers: Optional[int] = None,
+        train_valid_splits: tuple[float, float] = (0.9, 0.1),
+    ):
+        super().__init__()
+
+        self.batch_size = batch_size
+        self.train_valid_splits = train_valid_splits
+        self.core_ds = ds
+
+        if workers:
+            self.cores_available = workers
+        else:
+            self.cores_available = len(os.sched_getaffinity(0))
+
+        print(f"[*] Initializing DM with {self.cores_available} workers")
+
+    def setup(self, stage: str):
+        self.train_ds, self.valid_ds = random_split(
+            self.core_ds,
+            self.train_valid_splits,
+            generator=torch.Generator().manual_seed(42),
+        )
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_ds, num_workers=self.cores_available, batch_size=self.batch_size
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.valid_ds, num_workers=self.cores_available, batch_size=self.batch_size
+        )
+
+
+class BaseGptLM(L.LightningModule):
+
+    def __init__(self, lr: float, model: torch.nn.Module):
+        super().__init__()
+        torch.set_float32_matmul_precision("high")
+
+        self.loss = F.cross_entropy
+        self.model = model
+
+        self.save_hyperparameters()
+
+    def _run_model(self, batch) -> tuple[torch.Tensor, torch.Tensor]:
+        x, y = batch
+        y_hat = self.model(x)
+        return y, y_hat
+
+    def _do_step(self, batch, stage: Literal["train", "val", "test"]):
+        expected_output, actual_output = self._run_model(batch)
+        loss = self.loss(actual_output, expected_output)
+
+        self.log(
+            f"{stage}_loss",
+            loss,
+            on_step=False,
+            prog_bar=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
+
+        return loss
+
+    def training_step(self, batch):
+        return self._do_step(batch, stage="training")
+
+    def validation_step(self, batch):
+        return self._do_step(batch, stage="val")
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
+        return optimizer
