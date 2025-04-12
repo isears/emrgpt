@@ -84,7 +84,7 @@ class AkDecoderBlock(nn.Module):
             block_size=block_size,
             dropout=dropout,
         )
-        self.feedforward = FeedForward(n_embd=n_embd)
+        self.feedforward = FeedForward(n_embd=n_embd, dropout=dropout)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
@@ -107,18 +107,24 @@ class AkGPT(nn.Module):
     ):
         super().__init__()
 
+        self.block_size = block_size
+
         # TODO
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         # TODO
-        self.position_embedding_table = nn.Embedding(block_size, n_embd)
+        self.position_embedding_table = nn.Embedding(self.block_size, n_embd)
 
         self.blocks = nn.Sequential(
-            *[AkDecoderBlock(n_embd, n_head, block_size, dropout) for _ in n_layer]
+            *[
+                AkDecoderBlock(n_embd, n_head, self.block_size, dropout)
+                for _ in range(n_layer)
+            ]
         )
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, x: torch.Tensor):
+        B, T = x.shape
         tok_emb = self.token_embedding_table(x)
         # TODO
         pos_emb = self.position_embedding_table(torch.arange(T, device=x.device))
@@ -132,3 +138,19 @@ class AkGPT(nn.Module):
         logits = logits.view(B * T, C)
 
         return logits
+
+    def generate(self, max_new_tokens: int = 500, device: str = "cuda"):
+        generated_data = torch.zeros((1, 1), dtype=torch.long, device=device)
+
+        for _ in range(max_new_tokens):
+            # crop to blocksize before sending to model
+            logits = self(generated_data[:, -self.block_size :])
+
+            # Just get the last timestep (the prediction)
+            logits = logits[:, -1, :]
+            probs = F.softmax(logits, dim=-1)
+
+            next_data = torch.multinomial(probs, num_samples=1)
+            generated_data = torch.cat((generated_data, next_data), dim=1)
+
+        return generated_data

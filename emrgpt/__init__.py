@@ -57,13 +57,15 @@ class BaseGptLM(L.LightningModule):
 
         self.loss = F.cross_entropy
         self.model = model
+        self.lr = lr
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["model"])
 
     def _run_model(self, batch) -> tuple[torch.Tensor, torch.Tensor]:
         x, y = batch
+        B, T = x.shape
         y_hat = self.model(x)
-        return y, y_hat
+        return y.view(B * T), y_hat
 
     def _do_step(self, batch, stage: Literal["train", "val", "test"]):
         expected_output, actual_output = self._run_model(batch)
@@ -72,7 +74,7 @@ class BaseGptLM(L.LightningModule):
         self.log(
             f"{stage}_loss",
             loss,
-            on_step=False,
+            on_step=True,
             prog_bar=True,
             on_epoch=True,
             sync_dist=True,

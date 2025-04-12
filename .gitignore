@@ -171,3 +171,5 @@ cython_debug/
 .pypirc     
 
 .vscode
+cache
+lightning_logs

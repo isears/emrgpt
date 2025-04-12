@@ -1,0 +1,25 @@
+fit:
+  trainer:
+    max_epochs: 1000
+    gradient_clip_val: 4.0
+    gradient_clip_algorithm: "norm"
+    devices: 1
+    num_nodes: 1
+    val_check_interval: 0.05
+    # logger:
+    #   - class_path: lightning.pytorch.loggers.NeptuneLogger
+    #     init_args:
+    #       project: isears/physionet2025
+    #       log_model_checkpoints: False
+    callbacks:
+      - class_path: lightning.pytorch.callbacks.EarlyStopping
+        init_args:
+          patience: 5
+          monitor: val_loss
+      - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+        init_args:
+          save_top_k: 1
+          monitor: val_loss
+          mode: min
+          dirpath: ./cache/savedmodels/
+          filename: best-{epoch:04d}-{val_loss:.6f}

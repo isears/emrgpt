@@ -63,5 +63,5 @@ class ShakespeareDM(BasicDM):
             self.valid_ds,
             num_workers=self.cores_available,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=False,
         )
