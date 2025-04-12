@@ -147,10 +147,10 @@ class AkGPT(nn.Module):
             logits = self(generated_data[:, -self.block_size :])
 
             # Just get the last timestep (the prediction)
-            logits = logits[:, -1, :]
+            logits = logits[-1, :]
             probs = F.softmax(logits, dim=-1)
 
             next_data = torch.multinomial(probs, num_samples=1)
-            generated_data = torch.cat((generated_data, next_data), dim=1)
+            generated_data = torch.cat((generated_data, next_data.unsqueeze(0)), dim=1)
 
-        return generated_data
+        return generated_data.flatten()
