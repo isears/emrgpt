@@ -1,0 +1,25 @@
+model:
+  class_path: emrgpt.runners.EventBasedGptLM
+  init_args:
+    lr: 3e-4
+    model:
+      class_path: emrgpt.model.EventBasedEmrGPT
+      init_args:
+        vocab_size: 44
+        n_embd: 384
+        block_size: 256
+        n_head: 6
+        n_layer: 6
+        dropout: 0.2
+        max_len: 1000
+
+data:
+  class_path: emrgpt.BasicDM
+  init_args:
+    ds: 
+      class_path: mimicds.eventBasedDS.MimicEventBasedDS
+      init_args:
+        database: mimiciv
+        user: readonly
+        block_size: 256
+    batch_size: 64
