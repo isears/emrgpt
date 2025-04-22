@@ -229,9 +229,12 @@ class EventBasedEmrGPT(nn.Module):
         self.n_embd = n_embd
         self.vocab_size = vocab_size
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
-        self.positional_encoding = FixedPositionalEncoding(
-            d_model=n_embd, max_len=max_len, dropout=dropout
-        )
+
+        # TODO: fancy embedding later
+        # self.positional_encoding = FixedPositionalEncoding(
+        #     d_model=n_embd, max_len=max_len, dropout=dropout
+        # )
+        self.position_embedding_table = nn.Embedding(max_len, n_embd)
 
         self.blocks = nn.Sequential(
             *[
@@ -240,11 +243,11 @@ class EventBasedEmrGPT(nn.Module):
             ]
         )
         self.ln_f = nn.LayerNorm(n_embd + 1)
-        self.event_type_head = nn.Linear(n_embd + 1, vocab_size)
+        # self.event_type_head = nn.Linear(n_embd + 1, vocab_size)
         self.event_value_head = nn.Linear(n_embd + 1, vocab_size)
 
     def forward(
-        self, event_id: torch.Tensor, value: torch.Tensor, tidx: torch.Tensor
+        self, tidx: torch.Tensor, event_id: torch.Tensor, value: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # batch dim, time
         assert event_id.ndim == 2
@@ -256,16 +259,19 @@ class EventBasedEmrGPT(nn.Module):
 
         tok_emb = self.token_embedding_table(event_id)  # (B, T, n_embd)
         # TODO: pos_emb still needs to be refactored to work with array of indices rather than array of values
-        pos_emb = self.positional_encoding(tidx)  # (B, T)
+        # pos_emb = self.positional_encoding(tidx)  # (B, T)
+        pos_emb = self.position_embedding_table(tidx)
 
-        x = torch.concat([tok_emb + pos_emb, value], dim=-1)  # (B, T, n_embd+1)
+        x = torch.concat(
+            [tok_emb + pos_emb, value.unsqueeze(-1)], dim=-1
+        )  # (B, T, n_embd+1)
         x = self.blocks(x)
         x = self.ln_f(x)
 
-        event_type_logits = self.event_type_head(x).view(B * T, self.vocab_size)
+        # event_type_logits = self.event_type_head(x).view(B * T, self.vocab_size)
         magnitudes = self.event_value_head(x).view(B * T, self.vocab_size)
 
-        return event_type_logits, magnitudes
+        return magnitudes
 
 
 class TimelineBasedEmrGPT(nn.Module):
@@ -312,8 +318,10 @@ class TimelineBasedEmrGPT(nn.Module):
         assert x.ndim == 3
         B, T, C = x.shape
 
-        x = self.proj(x)
-        x = self.positional_encoding(x)
+        x = self.proj(x) * math.sqrt(self.d_model)
+
+        # PE wants [seq_len, batch_size, d_model] shapes
+        x = self.positional_encoding(x.permute(1, 0, 2)).permute(1, 0, 2)
         x = self.blocks(x)
         x = self.ln_f(x)
 
