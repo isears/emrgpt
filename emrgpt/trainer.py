@@ -9,25 +9,25 @@ from torchinfo import summary
 import torch.nn.functional as F
 import warnings
 from tqdm import tqdm
+from psycopg2.extensions import AsIs
 
 # stfu pandas
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 BLOCK_SIZE = 24
 MAX_EPOCHS = 10
-EVAL_INTERVAL = 10
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 1e-5
 BATCH_SIZE = 32
-EVAL_STEPS = 100
 DEVICE = "cuda"
-N_HEAD = 6
-N_LAYER = 6
-N_EMBD = 384
+N_HEAD = 10
+N_LAYER = 10
+N_EMBD = 32
 DROPOUT = 0.2
 DL_WORKERS = 6
+VAL_CHECK_INTERVAL = 100
 
 
-class VitalsDS(Dataset):
+class TimelineDS(Dataset):
 
     def __init__(self):
         super().__init__()
@@ -48,9 +48,111 @@ class VitalsDS(Dataset):
         res = cursor.fetchall()
         self.stay_ids = [i[0] for i in res]
 
+        # Also going to go ahead and calculate min / max for normalization
+        # NOTE: this should technically be done per train / val split
+        cursor.execute(
+            """
+            --sql
+            SELECT * FROM information_schema.columns
+            WHERE table_schema = 'mimiciv_local'
+            AND table_name = 'timebuckets';
+            """
+        )
+
+        res = cursor.fetchall()
+        self.features = [row[3] for row in res if row[3] not in ["stay_id", "tidx"]]
+        self.feature_stats = dict()
+
+        for f in self.features:
+            cursor.execute(
+                """
+                --sql
+                SELECT
+                    MIN(%s),
+                    MAX(%s),
+                    AVG(%s),
+                    STDDEV(%s)
+                FROM mimiciv_local.timebuckets;
+                """,
+                (AsIs(f),) * 4,
+            )
+            res = cursor.fetchall()
+
+            self.feature_stats[f] = {
+                "min": res[0][0],
+                "max": res[0][1],
+                "avg": res[0][2],
+                "stddev": res[0][3],
+            }
+
         c.close()
 
         self.conn = None
+
+    def normalize(self, data: torch.Tensor) -> torch.Tensor:
+        assert data.ndim == 2
+        assert data.shape[1] == len(self.features)
+
+        max_t = torch.tensor(
+            [v["max"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+        min_t = torch.tensor(
+            [v["min"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+
+        return (data - min_t) / (max_t - min_t)
+
+    def denormalize(self, data: torch.Tensor) -> torch.Tensor:
+        max_t = torch.tensor(
+            [v["max"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+        min_t = torch.tensor(
+            [v["min"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+
+        return (data * (max_t - min_t)) + min_t
+
+    def standardize(self, data: torch.Tensor) -> torch.Tensor:
+        assert data.ndim == 2
+        assert data.shape[1] == len(self.features)
+
+        mu = torch.tensor(
+            [v["avg"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+        sigma = torch.tensor(
+            [v["stddev"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+
+        return (data - mu) / sigma
+
+    def destandardize(self, data: torch.Tensor) -> torch.Tensor:
+        assert data.ndim == 2
+        assert data.shape[1] == len(self.features)
+
+        mu = torch.tensor(
+            [v["avg"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+        sigma = torch.tensor(
+            [v["stddev"] for k, v in self.feature_stats.items()],
+            dtype=torch.float,
+            device=data.device,
+        )
+
+        return (data * sigma) + mu
 
     def _lazy_get_conn(self):
         self.conn = psycopg2.connect("")
@@ -81,13 +183,7 @@ class VitalsDS(Dataset):
         res = cursor.fetchall()
 
         df = pd.DataFrame(res)
-        # df["temperature"] = df["temperature"].astype(float)
-        try:
-            df.drop(columns=["tidx", "stay_id"], inplace=True)
-        except KeyError as e:
-            # TODO: remove
-            print("aaaaa")
-            raise e
+        df.drop(columns=["tidx", "stay_id"], inplace=True)
 
         if len(df) < BLOCK_SIZE + 1:
             pad_len = (BLOCK_SIZE + 1) - len(df)
@@ -109,8 +205,8 @@ class VitalsDS(Dataset):
         X = X.fillna(0.0)
 
         return (
-            torch.tensor(X.values, dtype=torch.float),
-            torch.tensor(y.values, dtype=torch.float),
+            self.normalize(torch.tensor(X.values, dtype=torch.float)),
+            self.normalize(torch.tensor(y.values, dtype=torch.float)),
             y_nanmask,
         )
 
@@ -133,7 +229,7 @@ def calculate_losses(m, x, y, y_nanmasks):
 if __name__ == "__main__":
     torch.manual_seed(42)
 
-    ds = VitalsDS()
+    ds = TimelineDS()
 
     # test_subset = Subset(ds, range(0, 1000))
     train_ds, val_ds = random_split(ds, lengths=[0.9, 0.1])
@@ -142,7 +238,7 @@ if __name__ == "__main__":
         batch_size=BATCH_SIZE,
         num_workers=DL_WORKERS,
     )
-    val_dl = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=DL_WORKERS)
+    val_dl = DataLoader(val_ds, batch_size=512, num_workers=DL_WORKERS)
 
     model = TimelineBasedEmrGPT(
         n_event_types=13,
@@ -165,33 +261,38 @@ if __name__ == "__main__":
     best_val_loss = float("inf")
 
     for epoch in range(MAX_EPOCHS):
-        model.eval()
-        val_losses = list()
+        print(f"--> Training epoch {epoch}")
+        for batchnum, batch in enumerate(train_dl):
+            if batchnum % VAL_CHECK_INTERVAL == 0:
+                model.eval()
+                val_losses = list()
 
-        print(f"Validation epoch {epoch}")
+                for batch in val_dl:
+                    x_val, y_val, y_nanmasks = batch
+                    val_losses.append(
+                        calculate_losses(model, x_val, y_val, y_nanmasks).item()
+                    )
 
-        for batch in tqdm(val_dl):
-            x_val, y_val, y_nanmasks = batch
-            val_losses.append(calculate_losses(model, x_val, y_val, y_nanmasks).item())
+                avg_val_loss = sum(val_losses) / len(val_losses)
 
-        avg_val_loss = sum(val_losses) / len(val_losses)
-        print(f"Epoch {epoch} validation loss: {avg_val_loss}")
+                if avg_val_loss < best_val_loss:
+                    # print(f"{avg_val_loss} < {best_val_loss}, saving checkpoint")
+                    best_val_loss = avg_val_loss
+                    torch.save(
+                        model.state_dict(),
+                        f"cache/savedmodels/{model.__class__.__name__}.pt",
+                    )
 
-        if avg_val_loss < best_val_loss:
-            print(f"{avg_val_loss} < {best_val_loss}, saving checkpoint")
-            best_val_loss = avg_val_loss
-            torch.save(
-                model.state_dict(),
-                f"cache/savedmodels/{model.__class__.__name__}.pt",
-            )
+                    print(f"Step {batchnum} validation loss: {avg_val_loss} (*)")
+                else:
+                    print(f"Step {batchnum} validation loss: {avg_val_loss}")
 
-        model.train()
+                model.train()
 
-        print(f"Training epoch {epoch}")
-        for batch in tqdm(train_dl):
             x, y, y_nanmasks = batch
             loss = calculate_losses(model, x, y, y_nanmasks)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=4.0)
             optimizer.step()
 
     print("Done")
