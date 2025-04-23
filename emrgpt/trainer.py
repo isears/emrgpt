@@ -16,8 +16,7 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 BLOCK_SIZE = 24
 MAX_EPOCHS = 10
 EVAL_INTERVAL = 10
-VALUE_LOSS_MULTIPLIER = 0.0001
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-5
 BATCH_SIZE = 32
 EVAL_STEPS = 100
 DEVICE = "cuda"
@@ -25,7 +24,7 @@ N_HEAD = 6
 N_LAYER = 6
 N_EMBD = 384
 DROPOUT = 0.2
-DL_WORKERS = 0
+DL_WORKERS = 6
 
 
 class VitalsDS(Dataset):
@@ -41,8 +40,8 @@ class VitalsDS(Dataset):
         cursor.execute(
             """
             --sql
-            SELECT stay_id FROM mimiciv_derived.icustay_detail 
-            WHERE (icu_outtime - icu_intime) > INTERVAL '%s hours';
+            SELECT stay_id FROM mimiciv_derived.icustay_times 
+            WHERE (outtime_hr - intime_hr) > INTERVAL '%s hours';
             """,
             (BLOCK_SIZE,),
         )
@@ -74,16 +73,7 @@ class VitalsDS(Dataset):
         cursor.execute(
             """
             --sql
-            SELECT time_bucket('1 hour', charttime) AS tidx,
-            avg(heart_rate) AS heart_rate,
-            avg(sbp) AS sbp,
-            avg(dbp) AS dbp,
-            avg(resp_rate) as resp_rate,
-            avg(temperature) as temperature,
-            avg(spo2) as spo2,
-            avg(glucose) as glucose
-
-            FROM mimiciv_derived.vitalsign WHERE stay_id = %s GROUP BY tidx ORDER BY tidx ASC;
+            SELECT * FROM mimiciv_local.timebuckets WHERE stay_id = %s ORDER BY tidx ASC;
             """,
             (this_sid,),
         )
@@ -91,8 +81,13 @@ class VitalsDS(Dataset):
         res = cursor.fetchall()
 
         df = pd.DataFrame(res)
-        df["temperature"] = df["temperature"].astype(float)
-        df.drop(columns=["tidx"], inplace=True)
+        # df["temperature"] = df["temperature"].astype(float)
+        try:
+            df.drop(columns=["tidx", "stay_id"], inplace=True)
+        except KeyError as e:
+            # TODO: remove
+            print("aaaaa")
+            raise e
 
         if len(df) < BLOCK_SIZE + 1:
             pad_len = (BLOCK_SIZE + 1) - len(df)
@@ -140,8 +135,8 @@ if __name__ == "__main__":
 
     ds = VitalsDS()
 
-    test_subset = Subset(ds, range(0, 1000))
-    train_ds, val_ds = random_split(test_subset, lengths=[0.9, 0.1])
+    # test_subset = Subset(ds, range(0, 1000))
+    train_ds, val_ds = random_split(ds, lengths=[0.9, 0.1])
     train_dl = DataLoader(
         train_ds,
         batch_size=BATCH_SIZE,
@@ -150,7 +145,7 @@ if __name__ == "__main__":
     val_dl = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=DL_WORKERS)
 
     model = TimelineBasedEmrGPT(
-        n_event_types=7,
+        n_event_types=13,
         d_model=N_EMBD,
         block_size=BLOCK_SIZE,
         max_len=BLOCK_SIZE,
@@ -162,11 +157,12 @@ if __name__ == "__main__":
     summary(
         model,
         input_data=torch.zeros(
-            (BATCH_SIZE, BLOCK_SIZE, 7), dtype=torch.float, device=DEVICE
+            (BATCH_SIZE, BLOCK_SIZE, 13), dtype=torch.float, device=DEVICE
         ),
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+    best_val_loss = float("inf")
 
     for epoch in range(MAX_EPOCHS):
         model.eval()
@@ -180,6 +176,14 @@ if __name__ == "__main__":
 
         avg_val_loss = sum(val_losses) / len(val_losses)
         print(f"Epoch {epoch} validation loss: {avg_val_loss}")
+
+        if avg_val_loss < best_val_loss:
+            print(f"{avg_val_loss} < {best_val_loss}, saving checkpoint")
+            best_val_loss = avg_val_loss
+            torch.save(
+                model.state_dict(),
+                f"cache/savedmodels/{model.__class__.__name__}.pt",
+            )
 
         model.train()
 
