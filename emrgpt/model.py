@@ -334,7 +334,9 @@ class TimelineBasedEmrGPT(nn.Module):
     ):
         if seed is None:
             generated_data = torch.zeros(
-                (1, self.n_event_types, 1), dtype=torch.long, device=device
+                (1, 1, self.n_event_types),
+                dtype=torch.float,
+                device=device,
             )
         else:
             assert seed.ndim == 3
@@ -343,7 +345,9 @@ class TimelineBasedEmrGPT(nn.Module):
             generated_data = seed
 
         for _ in range(max_new_steps):
-            pred = self(generated_data[:, -self.block_size :])[-1, :]
-            generated_data = torch.cat((generated_data, pred.unsqueeze(0)), dim=1)
+            pred = self(generated_data)[-1, :]
+            generated_data = torch.cat(
+                (generated_data, pred.unsqueeze(0).unsqueeze(0)), dim=1
+            )
 
-        return generated_data.flatten()
+        return generated_data.squeeze()
