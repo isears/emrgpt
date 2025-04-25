@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS mimiciv_local.timebuckets;
+-- Base table: patient_hours
 CREATE TABLE mimiciv_local.timebuckets AS WITH patient_hours AS (
     SELECT stay_id,
         gs.tidx
@@ -9,6 +10,7 @@ CREATE TABLE mimiciv_local.timebuckets AS WITH patient_hours AS (
             interval '1 hour'
         ) AS gs(tidx)
 ),
+-- Vitals timebuckets
 tb_vitals AS (
     SELECT time_bucket('1 hour', charttime) AS tidx,
         stay_id,
@@ -23,6 +25,7 @@ tb_vitals AS (
     GROUP BY stay_id,
         tidx
 ),
+-- Norepi equivalent dose timebuckets
 tb_norepi_eq AS (
     SELECT n.stay_id,
         gs.tidx,
@@ -41,6 +44,7 @@ tb_norepi_eq AS (
     GROUP BY stay_id,
         tidx
 ),
+-- Ventilation timebuckets
 tb_vent AS (
     SELECT stay_id,
         gs.tidx,
@@ -83,6 +87,7 @@ tb_vent AS (
     GROUP BY stay_id,
         gs.tidx
 ),
+-- Ventilator settings timebuckets
 tb_vent_setting AS (
     SELECT time_bucket('1 hour', charttime) AS tidx,
         stay_id,
@@ -100,6 +105,47 @@ tb_vent_setting AS (
     FROM mimiciv_derived.ventilator_setting
     GROUP BY stay_id,
         tidx
+),
+-- Chem linked to stay_ids
+linked_chem AS (
+    SELECT i.stay_id,
+        c.charttime,
+        c.albumin,
+        c.globulin,
+        c.total_protein,
+        c.aniongap,
+        c.bicarbonate,
+        c.bun,
+        c.calcium,
+        c.chloride,
+        c.creatinine,
+        c.glucose,
+        c.sodium,
+        c.potassium
+    FROM mimiciv_derived.icustay_detail i
+        RIGHT JOIN mimiciv_derived.chemistry c ON i.subject_id = c.subject_id
+        AND c.charttime < i.icu_outtime
+        AND c.charttime > i.icu_intime
+    WHERE stay_id IS NOT NULL
+),
+tb_chem AS (
+    SELECT time_bucket('1 hour', charttime) AS tidx,
+        stay_id,
+        avg(albumin) AS albumin,
+        avg(globulin) AS globulin,
+        avg(total_protein) AS total_protein,
+        avg(aniongap) AS aniongap,
+        avg(bicarbonate) AS bicarbonate,
+        avg(bun) AS bun,
+        avg(calcium) AS calcium,
+        avg(chloride) AS chloride,
+        avg(creatinine) AS creatinine,
+        avg(glucose) AS glucose,
+        avg(sodium) AS sodium,
+        avg(potassium) AS potassium
+    FROM linked_chem
+    GROUP BY stay_id,
+        tidx
 )
 SELECT p.stay_id,
     p.tidx,
@@ -109,13 +155,16 @@ SELECT p.stay_id,
     tb_vitals.resp_rate,
     cast(tb_vitals.temperature AS DOUBLE PRECISION),
     tb_vitals.spo2,
-    tb_vitals.glucose,
+    -- Glucose may appear in either vitals (assume fingerstick) or chem
+    -- Take chem if it's available, otherwise fingerstick
+    coalesce(tb_chem.glucose, tb_vitals.glucose) AS glucose,
     cast(
         coalesce(tb_norepi_eq.norepi_eq_rate, 0.0) AS DOUBLE PRECISION
     ) AS norepi_eq_rate,
     cast(
         coalesce(tb_vent.vent_hfnc, 0.0) AS DOUBLE PRECISION
     ) AS vent_hfnc,
+    -- TODO: potentially coalesce this with vent_setting.fio2?
     cast(
         coalesce(tb_vent.vent_suppo2, 0.0) AS DOUBLE PRECISION
     ) AS vent_suppo2,
@@ -138,7 +187,19 @@ SELECT p.stay_id,
     tb_vent_setting.plateau_pressure,
     tb_vent_setting.peep,
     tb_vent_setting.fio2,
-    tb_vent_setting.flow_rate
+    tb_vent_setting.flow_rate,
+    tb_chem.albumin,
+    tb_chem.globulin,
+    tb_chem.total_protein,
+    tb_chem.aniongap,
+    tb_chem.bicarbonate,
+    tb_chem.bun,
+    tb_chem.calcium,
+    tb_chem.chloride,
+    tb_chem.creatinine,
+    -- tb_chem.glucose,
+    tb_chem.sodium,
+    tb_chem.potassium
 FROM patient_hours p
     LEFT JOIN tb_vitals ON p.stay_id = tb_vitals.stay_id
     AND p.tidx = tb_vitals.tidx
@@ -147,5 +208,7 @@ FROM patient_hours p
     LEFT JOIN tb_vent ON p.stay_id = tb_vent.stay_id
     AND p.tidx = tb_vent.tidx
     LEFT JOIN tb_vent_setting ON p.stay_id = tb_vent_setting.stay_id
-    AND p.tidx = tb_vent_setting.tidx;
+    AND p.tidx = tb_vent_setting.tidx
+    LEFT JOIN tb_chem ON p.stay_id = tb_chem.stay_id
+    AND p.tidx = tb_chem.tidx;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_stay_id_timestamp ON mimiciv_local.timebuckets(stay_id, tidx);
