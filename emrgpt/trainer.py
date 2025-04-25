@@ -13,16 +13,16 @@ from emrgpt.data import TimelineDS, ReintubationDS
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 BLOCK_SIZE = 24
-MAX_EPOCHS = 10
+MAX_EPOCHS = 50
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 32
 DEVICE = "cuda"
 N_HEAD = 10
 N_LAYER = 10
-N_EMBD = 32
+N_EMBD = 64
 DROPOUT = 0.2
-DL_WORKERS = 6
-VAL_CHECK_INTERVAL = 100
+DL_WORKERS = 12
+VAL_CHECK_INTERVAL = 200
 
 
 def calculate_losses(m, x, y, y_nanmasks):

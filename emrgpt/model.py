@@ -193,7 +193,7 @@ class TimelineBasedEmrGPT(nn.Module):
 
         preds = self.lm_head(x).view(B * T, C)
 
-        return preds
+        return F.sigmoid(preds)
 
     def generate(
         self, max_new_steps: int = 12, device: str = "cuda", seed: torch.Tensor = None
