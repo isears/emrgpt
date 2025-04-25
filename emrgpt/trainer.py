@@ -33,9 +33,10 @@ def calculate_losses(m, x, y, y_nanmasks):
     y_nanmasks = y_nanmasks.view(B * T, C)
 
     preds = m(x)
-    preds_masked = preds * ~y_nanmasks
 
-    loss = F.mse_loss(preds_masked, y)
+    elementwise_loss = F.mse_loss(preds, y, reduction="none")
+    masked_loss = elementwise_loss * ~y_nanmasks
+    loss = masked_loss.sum() / (~y_nanmasks).sum()
 
     return loss
 
@@ -129,9 +130,9 @@ if __name__ == "__main__":
                         f"cache/savedmodels/{model.__class__.__name__}.pt",
                     )
 
-                    print(f"Step {batchnum} validation loss: {avg_val_loss} (*)")
+                    print(f"Step {batchnum:04d} validation loss: {avg_val_loss} (*)")
                 else:
-                    print(f"Step {batchnum} validation loss: {avg_val_loss}")
+                    print(f"Step {batchnum:04d} validation loss: {avg_val_loss}")
 
                 model.train()
 
