@@ -5,8 +5,9 @@ from torchinfo import summary
 import torch.nn.functional as F
 import warnings
 from tqdm import tqdm
+from sklearn.metrics import roc_auc_score
 
-from emrgpt.data import TimelineDS
+from emrgpt.data import TimelineDS, ReintubationDS
 
 # stfu pandas
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -39,19 +40,48 @@ def calculate_losses(m, x, y, y_nanmasks):
     return loss
 
 
+def calculate_utility_reintubation(
+    m: TimelineBasedEmrGPT, reintubation_dl: DataLoader
+) -> float:
+    m.eval()
+    ventilation_idx = reintubation_dl.dataset.tlds.features.index("vent_invasive")
+    y_trues = list()
+    y_preds = list()
+
+    for batchnum, batch in enumerate(reintubation_dl):
+        X, y = batch
+        synthetic_data = m.generate(
+            max_new_steps=reintubation_dl.dataset.prediction_window, seed=X.to("cuda")
+        )
+
+        preds = synthetic_data[:, :, ventilation_idx].sum(dim=1)
+
+        y_trues.append(y)
+        y_preds.append(preds.detach().cpu())
+
+    m.train()
+    return roc_auc_score(torch.cat(y_trues), torch.cat(y_preds))
+
+
 if __name__ == "__main__":
     torch.manual_seed(42)
 
     ds = TimelineDS(BLOCK_SIZE)
 
-    # test_subset = Subset(ds, range(0, 1000))
     train_ds, val_ds = random_split(ds, lengths=[0.9, 0.1])
+
+    validation_stay_ids = [val_ds.dataset.stay_ids[i] for i in val_ds.indices]
+    reintubation_validation_ds = ReintubationDS(tlds=ds, stay_ids=validation_stay_ids)
+
     train_dl = DataLoader(
         train_ds,
         batch_size=BATCH_SIZE,
         num_workers=DL_WORKERS,
     )
     val_dl = DataLoader(val_ds, batch_size=512, num_workers=DL_WORKERS)
+    reintubation_dl = DataLoader(
+        reintubation_validation_ds, batch_size=32, num_workers=DL_WORKERS
+    )
 
     model = TimelineBasedEmrGPT(
         n_event_types=13,
@@ -75,6 +105,9 @@ if __name__ == "__main__":
 
     for epoch in range(MAX_EPOCHS):
         print(f"--> Training epoch {epoch}")
+        reintubation_utility = calculate_utility_reintubation(model, reintubation_dl)
+        print(f"\tReintubation score: {reintubation_utility}")
+
         for batchnum, batch in enumerate(train_dl):
             if batchnum % VAL_CHECK_INTERVAL == 0:
                 model.eval()

@@ -179,7 +179,7 @@ class TimelineBasedEmrGPT(nn.Module):
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, n_event_types)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # batch_dim, seq_len, feat_dim
         assert x.ndim == 3
         B, T, C = x.shape
@@ -197,7 +197,7 @@ class TimelineBasedEmrGPT(nn.Module):
 
     def generate(
         self, max_new_steps: int = 12, device: str = "cuda", seed: torch.Tensor = None
-    ):
+    ) -> torch.Tensor:
         if seed is None:
             generated_data = torch.zeros(
                 (1, 1, self.n_event_types),
@@ -206,14 +206,13 @@ class TimelineBasedEmrGPT(nn.Module):
             )
         else:
             assert seed.ndim == 3
-            assert seed.shape[0] == 1
-
             generated_data = seed
 
+        B, T, C = generated_data.shape
         for _ in range(max_new_steps):
-            pred = self(generated_data)[-1, :]
+            pred = self(generated_data).view(B, T, C)[:, -1, :]
             generated_data = torch.cat(
-                (generated_data, pred.unsqueeze(0).unsqueeze(0)), dim=1
+                (generated_data[:, 1:, :], pred.unsqueeze(1)), dim=1
             )
 
-        return generated_data.squeeze()
+        return generated_data
