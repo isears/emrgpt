@@ -84,7 +84,7 @@ if __name__ == "__main__":
     )
 
     model = TimelineBasedEmrGPT(
-        n_event_types=13,
+        n_event_types=len(ds.features),
         d_model=N_EMBD,
         block_size=BLOCK_SIZE,
         max_len=BLOCK_SIZE,
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     summary(
         model,
         input_data=torch.zeros(
-            (BATCH_SIZE, BLOCK_SIZE, 13), dtype=torch.float, device=DEVICE
+            (BATCH_SIZE, BLOCK_SIZE, len(ds.features)), dtype=torch.float, device=DEVICE
         ),
     )
 

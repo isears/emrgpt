@@ -87,7 +87,9 @@ class TimelineDS(Dataset):
             device=data.device,
         )
 
-        return (data - min_t) / (max_t - min_t)
+        normalized = torch.nan_to_num((data - min_t) / (max_t - min_t), nan=0.0)
+
+        return normalized
 
     def denormalize(self, data: torch.Tensor) -> torch.Tensor:
         max_t = torch.tensor(
@@ -118,7 +120,9 @@ class TimelineDS(Dataset):
             device=data.device,
         )
 
-        return (data - mu) / sigma
+        standardized = torch.nan_to_num((data - mu) / sigma, nan=0.0)
+
+        return standardized
 
     def destandardize(self, data: torch.Tensor) -> torch.Tensor:
         assert data.ndim == 2
@@ -159,13 +163,20 @@ class TimelineDS(Dataset):
         )
 
         res = cursor.fetchall()
+        df = pd.DataFrame(res)
 
-        return pd.DataFrame(res)
+        # If a column is all <null> pandas will interpret as obj rather than float
+        for obj_col in df.select_dtypes("object").columns:
+            df[obj_col] = df[obj_col].astype("float")
+
+        return df
 
     @staticmethod
     def _pad(df_in: pd.DataFrame, desired_len: int) -> pd.DataFrame:
         pad_len = (desired_len) - len(df_in)
-        pad = pd.DataFrame(data={cname: [pd.NA] * pad_len for cname in df_in.columns})
+        pad = pd.DataFrame(
+            data={cname: [float("nan")] * pad_len for cname in df_in.columns}
+        )
         return pd.concat([pad, df_in])
 
     def __len__(self):
@@ -193,9 +204,6 @@ class TimelineDS(Dataset):
         X = df[0 : self.block_size]
         y = df[1 : self.block_size + 1]
         y_nanmask = torch.tensor(y.isna().values, dtype=torch.bool)
-
-        y = y.fillna(0.0)
-        X = X.fillna(0.0)
 
         return (
             self.normalize(torch.tensor(X.values, dtype=torch.float)),
@@ -292,8 +300,6 @@ class ReintubationDS(Dataset):
 
         if len(pre_extubation_df) < self.tlds.block_size:
             pre_extubation_df = self.tlds._pad(pre_extubation_df, self.tlds.block_size)
-
-        pre_extubation_df = pre_extubation_df.fillna(0.0)
 
         return self.tlds.normalize(
             torch.tensor(pre_extubation_df.values, dtype=torch.float)

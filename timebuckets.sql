@@ -82,6 +82,24 @@ tb_vent AS (
         ) AS gs(tidx)
     GROUP BY stay_id,
         gs.tidx
+),
+tb_vent_setting AS (
+    SELECT time_bucket('1 hour', charttime) AS tidx,
+        stay_id,
+        avg(respiratory_rate_set) AS respiratory_rate_set,
+        avg(respiratory_rate_total) AS respiratory_rate_total,
+        avg(respiratory_rate_spontaneous) AS respiratory_rate_spontaneous,
+        avg(minute_volume) AS minute_volume,
+        avg(tidal_volume_set) as tidal_volume_set,
+        avg(tidal_volume_observed) as tidal_volume_observed,
+        avg(tidal_volume_spontaneous) as tidal_volume_spontaneous,
+        avg(plateau_pressure) as plateau_pressure,
+        avg(peep) as peep,
+        avg(fio2) as fio2,
+        avg(flow_rate) as flow_rate
+    FROM mimiciv_derived.ventilator_setting
+    GROUP BY stay_id,
+        tidx
 )
 SELECT p.stay_id,
     p.tidx,
@@ -109,12 +127,25 @@ SELECT p.stay_id,
     ) AS vent_invasive,
     cast(
         coalesce(tb_vent.vent_trach, 0.0) AS DOUBLE PRECISION
-    ) AS vent_trach
+    ) AS vent_trach,
+    tb_vent_setting.respiratory_rate_set,
+    tb_vent_setting.respiratory_rate_total,
+    tb_vent_setting.respiratory_rate_spontaneous,
+    tb_vent_setting.minute_volume,
+    tb_vent_setting.tidal_volume_set,
+    tb_vent_setting.tidal_volume_observed,
+    tb_vent_setting.tidal_volume_spontaneous,
+    tb_vent_setting.plateau_pressure,
+    tb_vent_setting.peep,
+    tb_vent_setting.fio2,
+    tb_vent_setting.flow_rate
 FROM patient_hours p
     LEFT JOIN tb_vitals ON p.stay_id = tb_vitals.stay_id
     AND p.tidx = tb_vitals.tidx
     LEFT JOIN tb_norepi_eq ON p.stay_id = tb_norepi_eq.stay_id
     AND p.tidx = tb_norepi_eq.tidx
     LEFT JOIN tb_vent ON p.stay_id = tb_vent.stay_id
-    AND p.tidx = tb_vent.tidx;
+    AND p.tidx = tb_vent.tidx
+    LEFT JOIN tb_vent_setting ON p.stay_id = tb_vent_setting.stay_id
+    AND p.tidx = tb_vent_setting.tidx;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_stay_id_timestamp ON mimiciv_local.timebuckets(stay_id, tidx);
