@@ -15,9 +15,9 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 BLOCK_SIZE = 24
 MAX_EPOCHS = 50
 LEARNING_RATE = 1e-5
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 DEVICE = "cuda"
-N_HEAD = 10
+N_HEAD = 6
 N_LAYER = 10
 N_EMBD = 64
 DROPOUT = 0.2
