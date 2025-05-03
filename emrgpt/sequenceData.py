@@ -1,5 +1,5 @@
 import psycopg2.extras
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch
 import psycopg2
 import atexit
@@ -92,10 +92,38 @@ class EventSequenceDS(Dataset):
 
         return offsets_x, encodings_x, values_x, offsets_y, encodings_y, values_y
 
+    @staticmethod
+    def collate_fn(batch: list[tuple]):
+        offsets_x_aug, offsets_y_aug = list(), list()
+
+        additive_offset = 0
+        for ox, _, _, oy, _, _ in batch:
+            offsets_x_aug.append(ox + additive_offset)
+            offsets_y_aug.append(oy + additive_offset)
+
+        offsets_x_collated = torch.cat(offsets_x_aug)
+        offsets_y_collated = torch.cat(offsets_y_aug)
+
+        encodings_x_collated = torch.cat([b[1] for b in batch])
+        values_x_collated = torch.cat([b[2] for b in batch])
+        encodings_y_collated = torch.cat([b[4] for b in batch])
+        values_y_collated = torch.cat([b[5] for b in batch])
+
+        return (
+            offsets_x_collated,
+            encodings_x_collated,
+            values_x_collated,
+            offsets_y_collated,
+            encodings_y_collated,
+            values_y_collated,
+        )
+
 
 if __name__ == "__main__":
     ds = EventSequenceDS(block_size=24)
 
-    item = ds[0]
+    dl = DataLoader(ds, batch_size=2, num_workers=0, collate_fn=ds.collate_fn)
 
-    print(item)
+    for batch in dl:
+        print(batch)
+        break
