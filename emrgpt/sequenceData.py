@@ -29,6 +29,16 @@ class EventSequenceDS(Dataset):
         res = cursor.fetchall()
         self.stay_ids = [i[0] for i in res]
 
+        cursor.execute(
+            """
+            --sql
+            SELECT count(*) FROM mimiciv_local.item_encoding;
+            """
+        )
+        res = cursor.fetchall()
+        self.vocab_size = res[0][0]
+        c.close()
+
         self.conn = None
 
     def _lazy_get_conn(self):
@@ -80,43 +90,51 @@ class EventSequenceDS(Dataset):
         # The last offset is technically the end of the sequence
         # appending this value to end of offsets helps handle edge cases
         # NOTE: offsets will actually be block_size + 1 to handle this edge case
+        # TODO: not sure if the edge case where a timestep has 0 events is handled well here, it may be a silent failure
         offsets = torch.cat((offsets, torch.tensor([len(encodings)])))
         offsets_x = offsets[start_idx : end_idx + 1]
         offsets_y = offsets[start_idx + 1 : end_idx + 2]
 
         encodings_x = encodings[offsets_x[0] : offsets_x[-1]]
         values_x = values[offsets_x[0] : offsets_x[-1]]
+        offsets_x = offsets_x - offsets_x[0]
 
         encodings_y = encodings[offsets_y[0] : offsets_y[-1]]
         values_y = values[offsets_y[0] : offsets_y[-1]]
+        offsets_y = offsets_y - offsets_y[0]
 
-        return offsets_x, encodings_x, values_x, offsets_y, encodings_y, values_y
+        # Outputs will be 2d matrix (block_size x vocab_size) so need to convert y to that
+        timesteps = torch.bucketize(
+            torch.arange(len(encodings_y)),
+            offsets_y[1:],
+        )
+        one_hot = torch.zeros(self.vocab_size, self.block_size, dtype=torch.int32)
+        one_hot.index_put_(
+            (encodings_y, timesteps),
+            torch.ones_like(encodings_y, dtype=torch.int32),
+            accumulate=True,
+        )
+
+        # TODO: values_y never passed thru
+        # TODO: could pass collate-able dataclasses instead of collections of tensors
+        return offsets_x, encodings_x, values_x, one_hot.T
 
     @staticmethod
     def collate_fn(batch: list[tuple]):
-        offsets_x_aug, offsets_y_aug = list(), list()
+        offsets_x_aug = list()
 
         additive_offset = 0
-        for ox, _, _, oy, _, _ in batch:
+        for ox, _, _, _ in batch:
             offsets_x_aug.append(ox + additive_offset)
-            offsets_y_aug.append(oy + additive_offset)
 
         offsets_x_collated = torch.cat(offsets_x_aug)
-        offsets_y_collated = torch.cat(offsets_y_aug)
 
         encodings_x_collated = torch.cat([b[1] for b in batch])
         values_x_collated = torch.cat([b[2] for b in batch])
-        encodings_y_collated = torch.cat([b[4] for b in batch])
-        values_y_collated = torch.cat([b[5] for b in batch])
 
-        return (
-            offsets_x_collated,
-            encodings_x_collated,
-            values_x_collated,
-            offsets_y_collated,
-            encodings_y_collated,
-            values_y_collated,
-        )
+        y = torch.stack([b[3] for b in batch], dim=0)
+
+        return (offsets_x_collated, encodings_x_collated, values_x_collated, y)
 
 
 if __name__ == "__main__":

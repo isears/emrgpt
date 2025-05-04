@@ -127,7 +127,7 @@ class FixedPositionalEncoding(torch.nn.Module):
             "pe", pe
         )  # this stores the variable in the state_dict (used for non-trainable variables)
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         r"""Inputs of forward function
         Args:
             x: the sequence fed to the positional encoder model (required).
@@ -216,3 +216,71 @@ class TimelineBasedEmrGPT(nn.Module):
             )
 
         return generated_data
+
+
+class EventBasedEmrGPT(nn.Module):
+    """
+    This model is closer in spirit to NLM
+
+    - Input is a stream of event ids representing chartevents (later maybe inputevents, etc.)
+    - Bag embedding aggregates all the events that happened every hour
+    - Output is block_size x vocab_size
+    - B/c of aggregation over every timestep, problem is multilabel clf rather than multiclass clf
+    - No softmax for generation, instead need to define a cutoff value
+    - All outputs that exceed cutoff value are predicted event_ids for next timestep
+
+    # TODO: how define cutoff value?
+    # TODO: some chartevents have associated values, how can those be incorporated?
+    """
+
+    def __init__(
+        self,
+        vocab_size: int,
+        n_embd: int,
+        dropout: float,
+        block_size: int,
+        n_layer: int,
+        n_head: int,
+    ):
+        super().__init__()
+
+        self.block_size = block_size
+        self.n_embd = self.n_embd
+        self.vocab_size = vocab_size
+
+        # TODO: mode=sum / mode=max ?
+        self.embedding_table = nn.EmbeddingBag(vocab_size, n_embd, mode="mean")
+        self.positional_encoding = FixedPositionalEncoding(n_embd, block_size, dropout)
+        self.blocks = nn.Sequential(
+            *[
+                AkDecoderBlock(n_embd, n_head, block_size, dropout)
+                for _ in range(n_layer)
+            ]
+        )
+        self.ln_f = nn.LayerNorm(n_embd)
+        self.lm_head = nn.Linear(n_embd, vocab_size)
+
+    def forward(
+        self, offsets: torch.Tensor, encodings: torch.Tensor, values: torch.Tensor
+    ):
+        assert offsets.ndim == encodings.ndim == values.ndim
+        assert encodings.size() == values.size()
+        assert len(encodings) % self.block_size == 0, "Should not have a partial block"
+
+        batch_size = len(encodings) // self.block_size
+
+        # TODO: offsets=offsets[:-1]?
+        x = self.embedding_table(encodings, offsets=offsets)  # B * T, C
+        x = x.view(batch_size, self.block_size, self.n_embd)
+
+        # PE wants [seq_len, batch_size, d_model] shapes
+        x = self.positional_encoding(x.permute(1, 0, 2)).permute(1, 0, 2)
+
+        x = self.blocks(x)
+        x = self.ln_f(x)
+        x = self.lm_head(x)
+
+        return x.view(batch_size * self.block_size, self.vocab_size)
+
+    def generate(self, seed):
+        raise NotImplementedError()
