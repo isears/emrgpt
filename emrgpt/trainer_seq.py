@@ -26,22 +26,14 @@ VAL_CHECK_INTERVAL = 200
 
 
 def calculate_losses(m, batch):
-    off_x, enc_x, val_x, off_y, enc_y, val_y = batch
+    off_x, enc_x, val_x, y = batch
     off_x = off_x.to(DEVICE)
     enc_x = enc_x.to(DEVICE)
     val_x = val_x.to(DEVICE)
-    off_y = off_y.to(DEVICE)
-    enc_y = enc_y.to(DEVICE)
-    val_y = val_y.to(DEVICE)
+    y = y.to(DEVICE)
 
     preds = m(off_x, enc_x, val_x)
-
-    # TODO:
-    ...
-
-    elementwise_loss = F.mse_loss(preds, y, reduction="none")
-    masked_loss = elementwise_loss * ~y_nanmasks
-    loss = masked_loss.sum() / (~y_nanmasks).sum()
+    loss = F.cross_entropy(preds, y)
 
     return loss
 

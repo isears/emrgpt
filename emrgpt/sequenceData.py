@@ -125,7 +125,8 @@ class EventSequenceDS(Dataset):
 
         additive_offset = 0
         for ox, _, _, _ in batch:
-            offsets_x_aug.append(ox + additive_offset)
+            offsets_x_aug.append(ox[:-1] + additive_offset)
+            additive_offset += ox.max()
 
         offsets_x_collated = torch.cat(offsets_x_aug)
 
