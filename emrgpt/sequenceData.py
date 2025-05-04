@@ -3,7 +3,80 @@ from torch.utils.data import Dataset, DataLoader
 import torch
 import psycopg2
 import atexit
-import pandas as pd
+from dataclasses import dataclass
+
+
+@dataclass
+class EventSequence:
+    offsets: torch.Tensor
+    encodings: torch.Tensor
+    values: torch.Tensor
+    vocab_size: int
+    block_size: int
+
+    def to_ohe(self) -> torch.Tensor:
+        # TODO: verify
+        # NOTE: also assuming offsets don't include len(encodings) as last element
+        timesteps = torch.bucketize(
+            torch.arange(len(self.encodings)),
+            torch.cat([self.offsets[1:], torch.tensor([len(self.encodings)])]),
+        )
+        one_hot = torch.zeros(
+            self.vocab_size,
+            self.block_size,
+            dtype=torch.float,
+            device=self.encodings.device,
+        )
+        one_hot.index_put_(
+            (self.encodings, timesteps),
+            torch.ones_like(
+                self.encodings, dtype=torch.float, device=self.encodings.device
+            ),
+            accumulate=True,
+        )
+
+        return one_hot.T
+
+    @classmethod
+    def from_ohe(cls, t_ohe: torch.Tensor) -> "EventSequence":
+        # TODO
+        raise NotImplementedError()
+
+    @classmethod
+    def collate(cls, batch: list["EventSequence"]) -> "EventSequence":
+        # TODO unfinished
+        # NOTE: so far writing this assuming offsets don't include last element (i.e. len(encodings))
+        assert (
+            len(set([es.vocab_size for es in batch])) == 1
+        ), "All elements in batch should have same vocab"
+        assert (
+            len(set([es.block_size for es in batch])) == 1
+        ), "All elements in batch should have same block size"
+
+        offsets_aug = list()
+
+        additive_offset = 0
+        for es in batch:
+            offsets_aug.append(es.offsets + additive_offset)
+            additive_offset += len(es.encodings)
+
+        offsets_collated = torch.cat(offsets_aug)
+
+        encodings_collated = torch.cat([es.encodings for es in batch])
+        values_collated = torch.cat([es.values for es in batch])
+
+        return EventSequence(
+            offsets_collated,
+            encodings_collated,
+            values_collated,
+            batch[0].vocab_size,
+            batch[0].block_size,
+        )
+
+    def set_device(self, device: str):
+        self.offsets = self.offsets.to(device)
+        self.encodings = self.encodings.to(device)
+        self.values = self.values.to(device)
 
 
 class EventSequenceDS(Dataset):
@@ -53,7 +126,7 @@ class EventSequenceDS(Dataset):
     def __len__(self):
         return len(self.stay_ids)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> tuple[EventSequence, torch.Tensor]:
         if self.conn is None:
             self._lazy_get_conn()
 
@@ -103,39 +176,21 @@ class EventSequenceDS(Dataset):
         values_y = values[offsets_y[0] : offsets_y[-1]]
         offsets_y = offsets_y - offsets_y[0]
 
-        # Outputs will be 2d matrix (block_size x vocab_size) so need to convert y to that
-        timesteps = torch.bucketize(
-            torch.arange(len(encodings_y)),
-            offsets_y[1:],
+        es_x = EventSequence(
+            offsets_x[:-1], encodings_x, values_x, self.vocab_size, self.block_size
         )
-        one_hot = torch.zeros(self.vocab_size, self.block_size, dtype=torch.float)
-        one_hot.index_put_(
-            (encodings_y, timesteps),
-            torch.ones_like(encodings_y, dtype=torch.float),
-            accumulate=True,
+        es_y = EventSequence(
+            offsets_y[:-1], encodings_y, values_y, self.vocab_size, self.block_size
         )
 
-        # TODO: values_y never passed thru
-        # TODO: could pass collate-able dataclasses instead of collections of tensors
-        return offsets_x, encodings_x, values_x, one_hot.T
+        return es_x, es_y.to_ohe()
 
     @staticmethod
     def collate_fn(batch: list[tuple]):
-        offsets_x_aug = list()
+        x = EventSequence.collate([batch_x for batch_x, _ in batch])
+        y = torch.stack([batch_y for _, batch_y in batch], dim=0)
 
-        additive_offset = 0
-        for ox, _, _, _ in batch:
-            offsets_x_aug.append(ox[:-1] + additive_offset)
-            additive_offset += ox.max()
-
-        offsets_x_collated = torch.cat(offsets_x_aug)
-
-        encodings_x_collated = torch.cat([b[1] for b in batch])
-        values_x_collated = torch.cat([b[2] for b in batch])
-
-        y = torch.stack([b[3] for b in batch], dim=0)
-
-        return (offsets_x_collated, encodings_x_collated, values_x_collated, y)
+        return x, y
 
 
 if __name__ == "__main__":

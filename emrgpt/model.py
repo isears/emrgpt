@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch
 from torch.nn import functional as F
 import math
+from emrgpt.sequenceData import EventSequence
 
 
 class AkSelfAttentionHead(nn.Module):
@@ -269,18 +270,17 @@ class EventBasedEmrGPT(nn.Module):
 
         batch_size = len(offsets) // self.block_size
 
-        # TODO: offsets=offsets[:-1]?
-        x = self.embedding_table(encodings, offsets=offsets)  # B * T, C
-        x = x.view(batch_size, self.block_size, self.n_embd)
+        out = self.embedding_table(encodings, offsets=offsets)  # B * T, C
+        out = out.view(batch_size, self.block_size, self.n_embd)
 
         # PE wants [seq_len, batch_size, d_model] shapes
-        x = self.positional_encoding(x.permute(1, 0, 2)).permute(1, 0, 2)
+        out = self.positional_encoding(out.permute(1, 0, 2)).permute(1, 0, 2)
 
-        x = self.blocks(x)
-        x = self.ln_f(x)
-        x = self.lm_head(x)
+        out = self.blocks(out)
+        out = self.ln_f(out)
+        out = self.lm_head(out)
 
-        return x.view(batch_size * self.block_size, self.vocab_size)
+        return out.view(batch_size * self.block_size, self.vocab_size)
 
     def generate(self, seed):
         raise NotImplementedError()

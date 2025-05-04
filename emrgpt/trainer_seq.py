@@ -7,14 +7,14 @@ import warnings
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
 
-from emrgpt.sequenceData import EventSequenceDS
+from emrgpt.sequenceData import EventSequenceDS, EventSequence
 
 # stfu pandas
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 BLOCK_SIZE = 24
 MAX_EPOCHS = 50
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 128
 DEVICE = "cuda"
 N_HEAD = 6
@@ -25,14 +25,14 @@ DL_WORKERS = 12
 VAL_CHECK_INTERVAL = 200
 
 
-def calculate_losses(m, batch, loss_module):
-    off_x, enc_x, val_x, y = batch
-    off_x = off_x.to(DEVICE)
-    enc_x = enc_x.to(DEVICE)
-    val_x = val_x.to(DEVICE)
+def calculate_losses(
+    m: EventBasedEmrGPT, batch: tuple[EventSequence, torch.Tensor], loss_module
+):
+    es_x, y = batch
     y = y.to(DEVICE)
+    es_x.set_device(DEVICE)
 
-    preds = m(off_x, enc_x, val_x)
+    preds = m(es_x.offsets, es_x.encodings, es_x.values)
     B, T, C = y.shape
     loss = loss_module(preds, y.view(B * T, C))
 
@@ -94,10 +94,11 @@ if __name__ == "__main__":
         dropout=DROPOUT,
     ).to(DEVICE)
 
-    x1, x2, x3, _ = next(iter(train_dl))
+    x, _ = next(iter(train_dl))
+    x.set_device(DEVICE)
     summary(
         model,
-        input_data=(x1.to(DEVICE), x2.to(DEVICE), x3.to(DEVICE)),
+        input_data=(x.offsets, x.encodings, x.values),
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
