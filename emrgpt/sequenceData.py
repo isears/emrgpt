@@ -36,7 +36,7 @@ class EventSequenceDS(Dataset):
             """
         )
         res = cursor.fetchall()
-        self.vocab_size = res[0][0]
+        self.vocab_size = res[0][0] + 1
         c.close()
 
         self.conn = None
@@ -108,10 +108,10 @@ class EventSequenceDS(Dataset):
             torch.arange(len(encodings_y)),
             offsets_y[1:],
         )
-        one_hot = torch.zeros(self.vocab_size, self.block_size, dtype=torch.int32)
+        one_hot = torch.zeros(self.vocab_size, self.block_size, dtype=torch.float)
         one_hot.index_put_(
             (encodings_y, timesteps),
-            torch.ones_like(encodings_y, dtype=torch.int32),
+            torch.ones_like(encodings_y, dtype=torch.float),
             accumulate=True,
         )
 

@@ -25,7 +25,7 @@ DL_WORKERS = 12
 VAL_CHECK_INTERVAL = 200
 
 
-def calculate_losses(m, batch):
+def calculate_losses(m, batch, loss_module):
     off_x, enc_x, val_x, y = batch
     off_x = off_x.to(DEVICE)
     enc_x = enc_x.to(DEVICE)
@@ -33,7 +33,8 @@ def calculate_losses(m, batch):
     y = y.to(DEVICE)
 
     preds = m(off_x, enc_x, val_x)
-    loss = F.cross_entropy(preds, y)
+    B, T, C = y.shape
+    loss = loss_module(preds, y.view(B * T, C))
 
     return loss
 
@@ -75,28 +76,32 @@ if __name__ == "__main__":
         train_ds,
         batch_size=BATCH_SIZE,
         num_workers=DL_WORKERS,
+        collate_fn=ds.collate_fn,
     )
-    val_dl = DataLoader(val_ds, batch_size=512, num_workers=DL_WORKERS)
+    val_dl = DataLoader(
+        val_ds, batch_size=512, num_workers=DL_WORKERS, collate_fn=ds.collate_fn
+    )
     # reintubation_dl = DataLoader(
     #     reintubation_validation_ds, batch_size=32, num_workers=DL_WORKERS
     # )
 
     model = EventBasedEmrGPT(
-        n_event_types=ds.vocab_size,
-        d_model=N_EMBD,
+        vocab_size=ds.vocab_size,
+        n_embd=N_EMBD,
         block_size=BLOCK_SIZE,
         n_head=N_HEAD,
         n_layer=N_LAYER,
         dropout=DROPOUT,
     ).to(DEVICE)
 
-    x1, x2, x3, _, _, _ = next(iter(train_dl))
+    x1, x2, x3, _ = next(iter(train_dl))
     summary(
         model,
-        input_data=(x1, x2, x3),
+        input_data=(x1.to(DEVICE), x2.to(DEVICE), x3.to(DEVICE)),
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+    loss_module = torch.nn.BCEWithLogitsLoss()
     best_val_loss = float("inf")
 
     for epoch in range(MAX_EPOCHS):
@@ -110,7 +115,9 @@ if __name__ == "__main__":
                 val_losses = list()
 
                 for batch in val_dl:
-                    val_losses.append(calculate_losses(model, batch).item())
+                    val_losses.append(
+                        calculate_losses(model, batch, loss_module).item()
+                    )
 
                 avg_val_loss = sum(val_losses) / len(val_losses)
 
@@ -128,7 +135,7 @@ if __name__ == "__main__":
 
                 model.train()
 
-            loss = calculate_losses(model, batch)
+            loss = calculate_losses(model, batch, loss_module)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=4.0)
             optimizer.step()

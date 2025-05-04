@@ -245,7 +245,7 @@ class EventBasedEmrGPT(nn.Module):
         super().__init__()
 
         self.block_size = block_size
-        self.n_embd = self.n_embd
+        self.n_embd = n_embd
         self.vocab_size = vocab_size
 
         # TODO: mode=sum / mode=max ?
@@ -265,9 +265,9 @@ class EventBasedEmrGPT(nn.Module):
     ):
         assert offsets.ndim == encodings.ndim == values.ndim
         assert encodings.size() == values.size()
-        assert len(encodings) % self.block_size == 0, "Should not have a partial block"
+        assert len(offsets) % self.block_size == 0, "Should not have a partial block"
 
-        batch_size = len(encodings) // self.block_size
+        batch_size = len(offsets) // self.block_size
 
         # TODO: offsets=offsets[:-1]?
         x = self.embedding_table(encodings, offsets=offsets)  # B * T, C
