@@ -30,15 +30,17 @@ CREATE TABLE mimiciv_local.sequences AS (
                 OR enc.value = 'NUMERIC'
             )
             LEFT JOIN mimiciv_derived.icustay_detail icustays ON ce.stay_id = icustays.stay_id
+        ORDER BY stay_id,
+            tidx
     ),
     aggregations AS (
         SELECT stay_id,
             array_agg(encoding) AS encodings,
             array_agg(valuenum) AS
         values,
-            array_agg(tidx) AS tidx -- Need to filter out null encodings b/c low-prevalence events never received an encoding
+            array_agg(tidx) AS tidx
         FROM encoded_events
-        WHERE encoding IS NOT NULL
+        WHERE encoding IS NOT NULL -- Need to filter out null encodings b/c low-prevalence events never received an encoding
         GROUP BY stay_id
     )
     SELECT stay_id,
