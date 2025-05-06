@@ -37,17 +37,18 @@ CREATE TABLE mimiciv_local.val_ventilation AS (
     )
     SELECT mimiciv_local.tidx_encoding.stay_id,
         mimiciv_local.tidx_encoding.charthour,
-        mimiciv_local.tidx_encoding.tidx AS tidx,
+        mimiciv_local.tidx_encoding.tidx AS base_tidx,
         included_sid.firstventhour AS firstventhour,
         coalesce(
-            mimiciv_local.tidx_encoding.charthour >= (included_sid.firstventhour - INTERVAL '12 hours'),
+            -- Label points that are within 36 hrs of intubation as 'positive' b/c the model will have 24 of those hours
+            mimiciv_local.tidx_encoding.charthour >= (included_sid.firstventhour - INTERVAL '36 hours'),
             false
-        ) AS vent_initiation_within_12h
+        ) AS vent_initiation_36h
     FROM mimiciv_local.tidx_encoding
         LEFT JOIN included_sid ON included_sid.stay_id = mimiciv_local.tidx_encoding.stay_id
     WHERE (
-            mimiciv_local.tidx_encoding.charthour <= included_sid.firstventhour
+            mimiciv_local.tidx_encoding.charthour < (included_sid.firstventhour - INTERVAL '24 hours')
             OR included_sid.firstventhour IS NULL
         )
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_stay_id ON mimiciv_local.val_ventilation(stay_id, tidx);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stay_id ON mimiciv_local.val_ventilation(stay_id, base_tidx);
