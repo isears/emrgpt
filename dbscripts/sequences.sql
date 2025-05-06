@@ -8,14 +8,19 @@ CREATE TABLE mimiciv_local.sequences AS (
     ),
     encoded_events AS (
         SELECT ce.stay_id,
-            cast(
-                extract(
-                    epoch
-                    FROM (
-                            time_bucket('1 hour', ce.charttime) - tm.min_charthour
-                        ) / 3600
-                ) AS INT
-            ) AS tidx,
+            CASE
+                -- Have to handle special case where charttime < icu_intime:
+                -- Set all events prior to beginning of ICU stay to tidx 0
+                WHEN time_bucket('1 hour', ce.charttime) < time_bucket('1 hour', icustays.icu_intime) THEN 0
+                ELSE cast(
+                    extract(
+                        epoch
+                        FROM (
+                                time_bucket('1 hour', ce.charttime) - time_bucket('1 hour', icustays.icu_intime)
+                            ) / 3600
+                    ) AS INT
+                )
+            END AS tidx,
             enc.encoding,
             coalesce(ce.valuenum, 1.0) AS valuenum
         FROM mimiciv_icu.chartevents ce
@@ -24,7 +29,7 @@ CREATE TABLE mimiciv_local.sequences AS (
                 ce.value = enc.value
                 OR enc.value = 'NUMERIC'
             )
-            LEFT JOIN tidx_min tm ON ce.stay_id = tm.stay_id
+            LEFT JOIN mimiciv_derived.icustay_detail icustays ON ce.stay_id = icustays.stay_id
     ),
     aggregations AS (
         SELECT stay_id,
