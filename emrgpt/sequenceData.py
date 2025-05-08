@@ -104,26 +104,29 @@ class EventSequence:
 
 class EventSequenceDS(Dataset):
 
-    def __init__(self, block_size: int):
+    def __init__(self, block_size: int, stay_ids: list[int] = None):
         super().__init__()
         self.block_size = block_size
 
         # Inclusion criteria: any stays shorter than block_size
         c = psycopg2.connect("")
         cursor = c.cursor()
-        # TODO: this takes forever, precompute?
-        # NOTE: seems like result gets cached so maybe ok?
-        cursor.execute(
-            """
-            --sql
-            SELECT stay_id FROM mimiciv_local.sequences 
-            WHERE array_length(offsets, 1) >= %s;
-            """,
-            (block_size + 1,),
-        )
 
-        res = cursor.fetchall()
-        self.stay_ids = [i[0] for i in res]
+        if stay_ids is None:
+            cursor.execute(
+                """
+                --sql
+                SELECT stay_id FROM mimiciv_local.sequences 
+                WHERE array_length(offsets, 1) >= %s 
+                AND testset = false;
+                """,
+                (block_size + 1,),
+            )
+
+            res = cursor.fetchall()
+            self.stay_ids = [i[0] for i in res]
+        else:
+            self.stay_ids = stay_ids
 
         cursor.execute(
             """

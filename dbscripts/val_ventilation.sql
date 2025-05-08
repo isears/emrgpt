@@ -35,7 +35,7 @@ CREATE TABLE mimiciv_local.val_ventilation AS (
             )
             AND sid_firstlasthour.max_tidx >= 24
     )
-    SELECT mimiciv_local.tidx_encoding.stay_id,
+    SELECT included_sid.stay_id,
         mimiciv_local.tidx_encoding.charthour,
         mimiciv_local.tidx_encoding.tidx AS base_tidx,
         included_sid.firstventhour AS firstventhour,
@@ -45,7 +45,7 @@ CREATE TABLE mimiciv_local.val_ventilation AS (
             false
         ) AS vent_initiation_36h
     FROM mimiciv_local.tidx_encoding
-        LEFT JOIN included_sid ON included_sid.stay_id = mimiciv_local.tidx_encoding.stay_id
+        RIGHT JOIN included_sid ON included_sid.stay_id = mimiciv_local.tidx_encoding.stay_id
     WHERE (
             mimiciv_local.tidx_encoding.charthour < (included_sid.firstventhour - INTERVAL '24 hours')
             OR included_sid.firstventhour IS NULL
