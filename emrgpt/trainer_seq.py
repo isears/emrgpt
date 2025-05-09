@@ -39,29 +39,6 @@ def calculate_losses(
     return loss
 
 
-def calculate_utility_reintubation(
-    m: EventBasedEmrGPT, reintubation_dl: DataLoader
-) -> float:
-    m.eval()
-    ventilation_idx = reintubation_dl.dataset.tlds.features.index("vent_invasive")
-    y_trues = list()
-    y_preds = list()
-
-    for batchnum, batch in enumerate(reintubation_dl):
-        X, y = batch
-        synthetic_data = m.generate(
-            max_new_steps=reintubation_dl.dataset.prediction_window, seed=X.to("cuda")
-        )
-
-        preds = synthetic_data[:, :, ventilation_idx].sum(dim=1)
-
-        y_trues.append(y)
-        y_preds.append(preds.detach().cpu())
-
-    m.train()
-    return roc_auc_score(torch.cat(y_trues), torch.cat(y_preds))
-
-
 if __name__ == "__main__":
     torch.manual_seed(42)
 

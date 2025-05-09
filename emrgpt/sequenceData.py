@@ -256,7 +256,7 @@ class EventSequenceDS(Dataset):
     @staticmethod
     def collate_fn(batch: list[tuple]):
         x = EventSequence.collate([batch_x for batch_x, _ in batch])
-        y = torch.stack([batch_y for _, batch_y in batch], dim=0)
+        y = torch.cat([batch_y for _, batch_y in batch], dim=0)
 
         return x, y
 
