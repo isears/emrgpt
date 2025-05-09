@@ -283,10 +283,13 @@ class EventBasedEmrGPT(nn.Module):
         return out.view(batch_size * self.block_size, self.vocab_size)
 
     def generate(
-        self, seed: EventSequence, lookahead: int = 12, threshold: float = 0.1
+        self, seed: EventSequence, lookahead: int = 12, thresholds: torch.Tensor = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
         assert seed.block_size == self.block_size
         assert seed.vocab_size == self.vocab_size
+
+        if thresholds is not None:
+            assert len(thresholds) == self.vocab_size
 
         batch_size = len(seed.offsets) // seed.block_size
         collected_probs = list()
@@ -300,7 +303,10 @@ class EventBasedEmrGPT(nn.Module):
                 next_step_probs = F.sigmoid(next_step_logits)
                 collected_probs.append(next_step_probs)
 
-                next_step_preds = next_step_probs > threshold
+                if thresholds is not None:
+                    next_step_preds = next_step_probs > thresholds
+                else:
+                    next_step_preds = next_step_probs > 0.01
 
                 sliding_window = torch.cat(
                     [seed.to_ohe()[:, 1:, :], next_step_preds.unsqueeze(1)], dim=1

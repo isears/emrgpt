@@ -23,12 +23,14 @@ if __name__ == "__main__":
         dataset=ds, batch_size=128, num_workers=10, collate_fn=ds.collate_fn
     )
 
+    thresholds = torch.load("cache/thresholds.pt").to("cuda")
+
     preds = list()
     y_true = list()
 
     for x, y in tqdm(dl):
         x.set_device("cuda")
-        out, probabilities = model.generate(seed=x, lookahead=12)
+        out, probabilities = model.generate(seed=x, lookahead=12, thresholds=thresholds)
         window_probability = torch.amax(probabilities[:, :, VENT_ENCODINGS], dim=(1, 2))
 
         preds.append(window_probability.detach().cpu())
