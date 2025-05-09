@@ -17,58 +17,95 @@ class EventSequence:
     def to_ohe(self) -> torch.Tensor:
         # TODO: verify
         # NOTE: also assuming offsets don't include len(encodings) as last element
-        timesteps = (
-            torch.bucketize(
-                torch.arange(len(self.encodings), device=self.encodings.device),
-                # torch.cat([self.offsets[1:], torch.tensor([len(self.encodings)])]),
-                self.offsets,
-                right=True,
-            )
-            - 1
-        )
-        one_hot = torch.zeros(
-            self.vocab_size,
-            self.block_size,
-            dtype=torch.float,
-            device=self.encodings.device,
-        )
-        one_hot.index_put_(
-            (self.encodings, timesteps),
-            torch.ones_like(
-                self.encodings, dtype=torch.float, device=self.encodings.device
-            ),
-            accumulate=True,
-        )
+        batch_size = len(self.offsets) // self.block_size
+        collected_ohe = list()
 
-        return one_hot.T
-
-    @classmethod
-    def from_ohe(cls, encoding_ohe: torch.Tensor) -> "EventSequence":
-        # TODO: batched encodings (ndim = 3)
-        assert encoding_ohe.ndim == 2
-        block_size, vocab_size = encoding_ohe.shape
-
-        timesteps, encodings = encoding_ohe.nonzero(as_tuple=True)
-
-        # Only necessary if it's possible to have more than one event of a given type per timestep
-        # counts = encoding_ohe[timesteps, encodings].int()
-        # encodings = event_ids.repeat_interleave(counts)
-        # timesteps = timesteps.repeat_interleave(counts)
-
-        # timesteps, sort_idx = torch.sort(timesteps)
-        # encodings = encodings[sort_idx]
-
-        counts_per_timestep = torch.bincount(timesteps, minlength=block_size)
-        offsets = torch.cat(
+        offsets_aug = torch.cat(
             [
-                torch.tensor([0], device=encoding_ohe.device),
-                counts_per_timestep.cumsum(0)[0:-1],
+                self.offsets,
+                torch.tensor([len(self.encodings)], device=self.encodings.device),
             ]
         )
 
-        return EventSequence(
-            offsets, encodings, torch.zeros_like(encodings), vocab_size, block_size
-        )
+        # TODO: this could be faster if somehow vectorized
+        for idx in range(0, batch_size):
+            this_batch_offsets = offsets_aug[
+                idx * self.block_size : ((idx + 1) * self.block_size) + 1
+            ]
+            this_batch_encodings = self.encodings[
+                this_batch_offsets[0] : this_batch_offsets[-1]
+            ]
+            this_batch_offsets = (this_batch_offsets - this_batch_offsets[0])[0:-1]
+            timesteps = (
+                torch.bucketize(
+                    torch.arange(
+                        len(this_batch_encodings), device=self.encodings.device
+                    ),
+                    this_batch_offsets,
+                    right=True,
+                )
+                - 1
+            )
+
+            one_hot = torch.zeros(
+                self.vocab_size,
+                self.block_size,
+                dtype=torch.float,
+                device=self.encodings.device,
+            )
+            one_hot.index_put_(
+                (this_batch_encodings, timesteps),
+                torch.ones_like(
+                    this_batch_encodings,
+                    dtype=torch.float,
+                    device=self.encodings.device,
+                ),
+                accumulate=True,
+            )
+
+            collected_ohe.append(one_hot.T)
+
+        return torch.stack(collected_ohe, dim=0)
+
+    @classmethod
+    def from_ohe(cls, encoding_ohe: torch.Tensor) -> "EventSequence":
+        # batch_dim * time * n_features
+        assert encoding_ohe.ndim == 3
+        batch_size, block_size, vocab_size = encoding_ohe.shape
+
+        # TODO: vectorize for batch efficiency
+        collected_es = list()
+
+        for idx in range(0, batch_size):
+            timesteps, encodings = encoding_ohe[idx].nonzero(as_tuple=True)
+
+            # Only necessary if it's possible to have more than one event of a given type per timestep
+            # counts = encoding_ohe[timesteps, encodings].int()
+            # encodings = event_ids.repeat_interleave(counts)
+            # timesteps = timesteps.repeat_interleave(counts)
+
+            # timesteps, sort_idx = torch.sort(timesteps)
+            # encodings = encodings[sort_idx]
+
+            counts_per_timestep = torch.bincount(timesteps, minlength=block_size)
+            offsets = torch.cat(
+                [
+                    torch.tensor([0], device=encoding_ohe.device),
+                    counts_per_timestep.cumsum(0)[0:-1],
+                ]
+            )
+
+            collected_es.append(
+                EventSequence(
+                    offsets,
+                    encodings,
+                    torch.zeros_like(encodings),
+                    vocab_size,
+                    block_size,
+                )
+            )
+
+        return EventSequence.collate(collected_es)
 
     @classmethod
     def collate(cls, batch: list["EventSequence"]) -> "EventSequence":

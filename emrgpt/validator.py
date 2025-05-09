@@ -4,6 +4,7 @@ from emrgpt.validationData import NewVentilationDS
 import torch
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, average_precision_score
+from torch.utils.data import DataLoader
 
 VENT_ENCODINGS = [368, 369, 370, 371]
 
@@ -18,20 +19,23 @@ if __name__ == "__main__":
     model = model.to("cuda")
 
     ds = NewVentilationDS()
+    dl = DataLoader(
+        dataset=ds, batch_size=128, num_workers=10, collate_fn=ds.collate_fn
+    )
 
     preds = list()
     y_true = list()
 
-    for x, y in tqdm(ds):
+    for x, y in tqdm(dl):
         x.set_device("cuda")
         out, probabilities = model.generate(seed=x, lookahead=12)
-        window_probability = torch.max(probabilities[:, VENT_ENCODINGS])
+        window_probability = torch.amax(probabilities[:, :, VENT_ENCODINGS], dim=(1, 2))
 
         preds.append(window_probability.detach().cpu())
         y_true.append(y)
 
-    preds = torch.stack(preds)
-    y_true = torch.stack(y_true)
+    preds = torch.cat(preds)
+    y_true = torch.cat(y_true)
 
     print(preds.shape)
     print(y_true.shape)
