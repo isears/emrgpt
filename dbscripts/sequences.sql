@@ -37,14 +37,16 @@ CREATE TABLE mimiciv_local.sequences AS (
     ),
     -- Need to merge with tidx_encoding to ensure there are no tidx gaps
     encoded_events_complete AS (
-        SELECT ee.stay_id,
+        SELECT te.stay_id,
             te.tidx,
             -- Special event_id '0' (with value 0) for no events happened during tidx
             coalesce(ee.encoding, 0) AS encoding,
             coalesce(ee.valuenum, 0.0) AS valuenum
         FROM encoded_events ee
-            FULL OUTER JOIN mimiciv_local.tidx_encoding te ON ee.stay_id = te.stay_id
-            AND ee.tidx = te.tidx
+            FULL OUTER JOIN mimiciv_local.tidx_encoding te ON (
+                ee.stay_id = te.stay_id
+                AND ee.tidx = te.tidx
+            )
     ),
     aggregations AS (
         SELECT stay_id,

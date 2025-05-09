@@ -111,7 +111,9 @@ class NewVentilationDS(ValidationDS):
 
         offsets = torch.cat([offsets, torch.tensor([len(encodings)])])
 
-        offsets_block = offsets[base_tidx : base_tidx + self.block_size]
+        offsets_block = (
+            offsets[base_tidx : base_tidx + self.block_size] - offsets[base_tidx]
+        )
         encodings_block = encodings[
             offsets[base_tidx] : offsets[base_tidx + self.block_size + 1]
         ]
@@ -125,7 +127,7 @@ class NewVentilationDS(ValidationDS):
             values=values_block,
             vocab_size=self.vocab_size,
             block_size=self.block_size,
-        ), torch.tensor([int(label)])
+        ), torch.tensor(int(label))
 
 
 if __name__ == "__main__":
@@ -133,4 +135,4 @@ if __name__ == "__main__":
 
     print(len(ds))
 
-    print(ds[0])
+    print(ds[38])

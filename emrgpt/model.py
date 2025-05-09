@@ -282,5 +282,29 @@ class EventBasedEmrGPT(nn.Module):
 
         return out.view(batch_size * self.block_size, self.vocab_size)
 
-    def generate(self, seed):
-        raise NotImplementedError()
+    def generate(
+        self, seed: EventSequence, lookahead: int = 12, temperature: float = 0.1
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        assert seed.block_size == self.block_size
+        assert seed.vocab_size == self.vocab_size
+        assert seed.block_size == len(seed.offsets), "Only supporting batch size of 1"
+
+        collected_logits = list()
+
+        with torch.no_grad():
+            for step_idx in range(0, lookahead):
+                next_step_logits = self(seed.offsets, seed.encodings, seed.values)[
+                    -1, :
+                ]
+
+                collected_logits.append(next_step_logits)
+
+                next_step_preds = next_step_logits > temperature
+
+                sliding_window = torch.cat(
+                    [seed.to_ohe()[1:, :], next_step_preds.unsqueeze(0)], dim=0
+                )
+
+                seed = EventSequence.from_ohe(sliding_window)
+
+        return seed, F.sigmoid(torch.stack(collected_logits, dim=0))

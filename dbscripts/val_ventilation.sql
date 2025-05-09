@@ -49,6 +49,7 @@ CREATE TABLE mimiciv_local.val_ventilation AS (
     WHERE (
             mimiciv_local.tidx_encoding.charthour < (included_sid.firstventhour - INTERVAL '24 hours')
             OR included_sid.firstventhour IS NULL
-        )
+        ) -- Drop all timepoints that won't give us a full 24 hr block
+        AND mimiciv_local.tidx_encoding.tidx < (included_sid.max_tidx - 24)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_stay_id ON mimiciv_local.val_ventilation(stay_id, base_tidx);

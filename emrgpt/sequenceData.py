@@ -19,7 +19,7 @@ class EventSequence:
         # NOTE: also assuming offsets don't include len(encodings) as last element
         timesteps = (
             torch.bucketize(
-                torch.arange(len(self.encodings)),
+                torch.arange(len(self.encodings), device=self.encodings.device),
                 # torch.cat([self.offsets[1:], torch.tensor([len(self.encodings)])]),
                 self.offsets,
                 right=True,
@@ -59,7 +59,12 @@ class EventSequence:
         # encodings = encodings[sort_idx]
 
         counts_per_timestep = torch.bincount(timesteps, minlength=block_size)
-        offsets = torch.cat([torch.tensor([0]), counts_per_timestep.cumsum(0)[0:-1]])
+        offsets = torch.cat(
+            [
+                torch.tensor([0], device=encoding_ohe.device),
+                counts_per_timestep.cumsum(0)[0:-1],
+            ]
+        )
 
         return EventSequence(
             offsets, encodings, torch.zeros_like(encodings), vocab_size, block_size
