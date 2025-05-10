@@ -5,49 +5,12 @@ from emrgpt.sequenceData import EventSequenceDS
 from emrgpt.model import EventBasedEmrGPT
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from emrgpt.util import *
+import pandas as pd
 
+import warnings
 
-@dataclass
-class EventOfInterest:
-    name: str
-    encoding_id: int
-
-    def __post_init__(self):
-        self.y_true = list()
-        self.y_hat = list()
-
-    def add_batched_preds(self, y_true: torch.Tensor, y_hat: torch.Tensor):
-        assert y_true.ndim == 1
-        assert y_hat.ndim == 1
-        assert len(y_true) == len(y_hat)
-
-        self.y_true.append(y_true)
-        self.y_hat.append(y_hat)
-
-    def print_metrics(self):
-        y_true = torch.cat(self.y_true)
-        y_hat = torch.cat(self.y_hat)
-
-        auroc = roc_auc_score(y_true, y_hat)
-        auprc = average_precision_score(y_true, y_hat)
-
-        print(f"{self.name} ({self.encoding_id})")
-        print(f"\tAUROC: {auroc}")
-        print(f"\tAUPRC: {auprc}")
-
-
-# Common, clinically relevant events
-EVENTS_OF_INTEREST = [
-    EventOfInterest("A-fib", 114),
-    EventOfInterest("HR Alarm - High", 106),
-    EventOfInterest("HR Alarm - Low", 107),
-    EventOfInterest("Non-invasive BP Alarm - High", 182),
-    EventOfInterest("Non-invasive BP Alarm - Low", 183),
-    EventOfInterest("Arterial BP Alarm - High", 136),
-    EventOfInterest("Arterial BP Alarm - Low", 135),
-    EventOfInterest("Pulse Ox Alarm - High", 106),
-    EventOfInterest("Pulse Ox Alarm - Low", 107),
-]
+warnings.filterwarnings("ignore", module="sklearn")
 
 if __name__ == "__main__":
     model_path = "./cache/EventBasedEmrGPT.pt"
@@ -59,22 +22,49 @@ if __name__ == "__main__":
     model.eval()
     model = model.to("cuda")
 
-    ds = EventSequenceDS(block_size=24)
+    ds = EventSequenceDS(block_size=24, test=True)
     dl = DataLoader(dataset=ds, batch_size=32, num_workers=5, collate_fn=ds.collate_fn)
 
     y_hat = list()
     y_true = list()
 
-    for idx, (x, y) in tqdm(enumerate(dl)):
+    print("Generating preds...")
+    for x, y in tqdm(dl):
         x.set_device("cuda")
 
         _, probabilities = model.generate(seed=x, lookahead=1)
         probabilities = probabilities.detach().cpu().squeeze(1)
 
-        for eoi in EVENTS_OF_INTEREST:
-            eoi.add_batched_preds(
-                y[:, -1, eoi.encoding_id].bool(), probabilities[:, eoi.encoding_id]
-            )
+        y_true.append(y[:, -1, :].bool())
+        y_hat.append(probabilities)
 
-    for eoi in EVENTS_OF_INTEREST:
-        eoi.print_metrics()
+        # for eoi in EVENTS_OF_INTEREST:
+        #     eoi.add_batched_preds(
+        #         y[:, -1, eoi.encoding_id].bool(), probabilities[:, eoi.encoding_id]
+        #     )
+
+    # for eoi in EVENTS_OF_INTEREST:
+    #     eoi.print_metrics()
+
+    y_true = torch.cat(y_true)
+    y_hat = torch.cat(y_hat)
+
+    scoring_data = []
+
+    print("Scoring...")
+    for encoding_id, token_name in tqdm(get_encoding_map().items()):
+        scoring_data.append(
+            {
+                "Name": token_name,
+                "AUROC": roc_auc_score(y_true[:, encoding_id], y_hat[:, encoding_id]),
+                "AUPRC": average_precision_score(
+                    y_true[:, encoding_id], y_hat[:, encoding_id]
+                ),
+            }
+        )
+
+    df = pd.DataFrame(data=scoring_data)
+
+    print(f"Avg AUROC: {df['AUROC'].mean()}")
+    print(f"Avg AUPRC: {df['AUPRC'].mean()}")
+    print(df.nlargest(n=25, columns="AUPRC"))

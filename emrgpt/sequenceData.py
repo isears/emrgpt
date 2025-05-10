@@ -146,7 +146,7 @@ class EventSequence:
 
 class EventSequenceDS(Dataset):
 
-    def __init__(self, block_size: int, stay_ids: list[int] = None):
+    def __init__(self, block_size: int, stay_ids: list[int] = None, test: bool = False):
         super().__init__()
         self.block_size = block_size
 
@@ -160,14 +160,18 @@ class EventSequenceDS(Dataset):
                 --sql
                 SELECT stay_id FROM mimiciv_local.sequences 
                 WHERE array_length(offsets, 1) >= %s 
-                AND testset = false;
+                AND testset = %s;
                 """,
-                (block_size + 1,),
+                (block_size + 1, "true" if test else "false"),
             )
 
             res = cursor.fetchall()
             self.stay_ids = [i[0] for i in res]
         else:
+            if test:
+                raise ValueError(
+                    "Cannot specify test set = True and stay_ids at same time"
+                )
             self.stay_ids = stay_ids
 
         cursor.execute(
