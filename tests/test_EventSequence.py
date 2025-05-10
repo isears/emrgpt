@@ -1,5 +1,5 @@
 import torch
-from emrgpt.sequenceData import EventSequence
+from emrgpt.baggedEventModeling.data import EventSequence
 
 
 def test_round_trip_event_sequence():

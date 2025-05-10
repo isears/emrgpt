@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import torch
 from sklearn.metrics import roc_auc_score, average_precision_score
-from emrgpt.sequenceData import EventSequenceDS
+from emrgpt.baggedEventModeling.data import EventSequenceDS
 from emrgpt.model import EventBasedEmrGPT
 from torch.utils.data import DataLoader
 from tqdm import tqdm

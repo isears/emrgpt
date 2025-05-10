@@ -5,7 +5,7 @@ Datasets used to validate the clinical utility of GPT predictions
 from torch.utils.data import Dataset
 import psycopg2
 import psycopg2.extras
-from emrgpt.sequenceData import EventSequenceDS, EventSequence
+from emrgpt.baggedEventModeling.data import EventSequenceDS, EventSequence
 import atexit
 from abc import ABC, abstractmethod
 import pandas as pd

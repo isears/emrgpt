@@ -1,13 +1,13 @@
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 import torch
-from emrgpt.model import EventBasedEmrGPT
+from emrgpt.baggedEventModeling.model import BaggedEventEmrGPT
 from torchinfo import summary
 import torch.nn.functional as F
 import warnings
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
 
-from emrgpt.sequenceData import EventSequenceDS, EventSequence
+from emrgpt.baggedEventModeling.data import EventSequenceDS, EventSequence
 
 # stfu pandas
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -26,7 +26,7 @@ VAL_CHECK_INTERVAL = 200
 
 
 def calculate_losses(
-    m: EventBasedEmrGPT, batch: tuple[EventSequence, torch.Tensor], loss_module
+    m: BaggedEventEmrGPT, batch: tuple[EventSequence, torch.Tensor], loss_module
 ):
     es_x, y = batch
     y = y.to(DEVICE)
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     #     reintubation_validation_ds, batch_size=32, num_workers=DL_WORKERS
     # )
 
-    model = EventBasedEmrGPT(
+    model = BaggedEventEmrGPT(
         vocab_size=ds.vocab_size,
         n_embd=N_EMBD,
         block_size=BLOCK_SIZE,

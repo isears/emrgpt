@@ -1,7 +1,7 @@
 # Determine what prediction threshold maximizes next-hour AUPRC / AUROC
 import sys
 from emrgpt.model import EventBasedEmrGPT
-from emrgpt.sequenceData import EventSequenceDS
+from emrgpt.baggedEventModeling.data import EventSequenceDS
 import torch
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve

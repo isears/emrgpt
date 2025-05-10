@@ -1,6 +1,6 @@
 import sys
 from emrgpt.model import EventBasedEmrGPT
-from emrgpt.validationData import NewVentilationDS
+from emrgpt.baggedEventModeling.validationData import NewVentilationDS
 import torch
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, average_precision_score

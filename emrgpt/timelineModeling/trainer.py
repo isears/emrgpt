@@ -7,7 +7,7 @@ import warnings
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
 
-from emrgpt.timelineData import TimelineDS, ReintubationDS
+from emrgpt.timelineModeling.data import TimelineDS, ReintubationDS
 
 # stfu pandas
 warnings.simplefilter(action="ignore", category=FutureWarning)
