@@ -219,14 +219,6 @@ if __name__ == "__main__":
 
         if tts.needs_alignment:
             alignment_cte = do_alignment(tts, table, icustays)
-
-            # print()
-            # print(
-            #     alignment_cte.compile(
-            #         dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
-            #     )
-            # )
-
             table = alignment_cte
 
         if tts.event_type == "onetime":
@@ -234,12 +226,38 @@ if __name__ == "__main__":
         elif tts.event_type == "infusion":
             ctes_for_union.append(build_table_stmt_infusion(tts, table))
 
-    stmt = union_all(
-        *[
-            select(cte.c.stay_id, cte.c.charttime, cte.c.token_label, cte.c.token_value)
-            for cte in ctes_for_union
-        ]
-    ).order_by("stay_id", "charttime")
+    # Union all subqueries together
+    union_cte = (
+        union_all(
+            *[
+                select(
+                    cte.c.stay_id,
+                    cte.c.charttime,
+                    cte.c.token_label,
+                    cte.c.token_value,
+                )
+                for cte in ctes_for_union
+            ]
+        )
+        .order_by("stay_id", "charttime")
+        .cte("union_tokenized")
+    )
+
+    # Add percentile column
+    stmt = select(
+        union_cte.c.stay_id,
+        union_cte.c.charttime,
+        union_cte.c.token_label,
+        union_cte.c.token_value,
+        func.floor(
+            func.percent_rank().over(
+                partition_by=union_cte.c.token_label, order_by=union_cte.c.token_value
+            )
+            * 100
+        )
+        .cast(INTEGER)
+        .label("percentile"),
+    )
 
     print(
         stmt.compile(

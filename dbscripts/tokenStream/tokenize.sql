@@ -308,29 +308,44 @@ chemistry_tokenized AS (
                 )
         ) AS tokens (token_label, token_value, token_null) ON true
     WHERE NOT tokens.token_null
+),
+union_tokenized AS (
+    SELECT vitalsign_tokenized.stay_id AS stay_id,
+        vitalsign_tokenized.charttime AS charttime,
+        vitalsign_tokenized.token_label AS token_label,
+        vitalsign_tokenized.token_value AS token_value
+    FROM vitalsign_tokenized
+    UNION ALL
+    SELECT crrt_tokenized.stay_id AS stay_id,
+        crrt_tokenized.charttime AS charttime,
+        crrt_tokenized.token_label AS token_label,
+        crrt_tokenized.token_value AS token_value
+    FROM crrt_tokenized
+    UNION ALL
+    SELECT norepinephrine_equivalent_dose_tokenized.stay_id AS stay_id,
+        norepinephrine_equivalent_dose_tokenized.charttime AS charttime,
+        norepinephrine_equivalent_dose_tokenized.token_label AS token_label,
+        norepinephrine_equivalent_dose_tokenized.token_value AS token_value
+    FROM norepinephrine_equivalent_dose_tokenized
+    UNION ALL
+    SELECT chemistry_tokenized.stay_id AS stay_id,
+        chemistry_tokenized.charttime AS charttime,
+        chemistry_tokenized.token_label AS token_label,
+        chemistry_tokenized.token_value AS token_value
+    FROM chemistry_tokenized
+    ORDER BY stay_id,
+        charttime
 )
-SELECT vitalsign_tokenized.stay_id,
-    vitalsign_tokenized.charttime,
-    vitalsign_tokenized.token_label,
-    vitalsign_tokenized.token_value
-FROM vitalsign_tokenized
-UNION ALL
-SELECT crrt_tokenized.stay_id,
-    crrt_tokenized.charttime,
-    crrt_tokenized.token_label,
-    crrt_tokenized.token_value
-FROM crrt_tokenized
-UNION ALL
-SELECT norepinephrine_equivalent_dose_tokenized.stay_id,
-    norepinephrine_equivalent_dose_tokenized.charttime,
-    norepinephrine_equivalent_dose_tokenized.token_label,
-    norepinephrine_equivalent_dose_tokenized.token_value
-FROM norepinephrine_equivalent_dose_tokenized
-UNION ALL
-SELECT chemistry_tokenized.stay_id,
-    chemistry_tokenized.charttime,
-    chemistry_tokenized.token_label,
-    chemistry_tokenized.token_value
-FROM chemistry_tokenized
-ORDER BY stay_id,
-    charttime
+SELECT union_tokenized.stay_id,
+    union_tokenized.charttime,
+    union_tokenized.token_label,
+    union_tokenized.token_value,
+    CAST(
+        floor(
+            percent_rank() OVER (
+                PARTITION BY union_tokenized.token_label
+                ORDER BY union_tokenized.token_value
+            ) * 100
+        ) AS INTEGER
+    ) AS percentile
+FROM union_tokenized
