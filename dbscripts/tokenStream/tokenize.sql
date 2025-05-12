@@ -333,8 +333,6 @@ union_tokenized AS (
         chemistry_tokenized.token_label AS token_label,
         chemistry_tokenized.token_value AS token_value
     FROM chemistry_tokenized
-    ORDER BY stay_id,
-        charttime
 )
 SELECT union_tokenized.stay_id,
     union_tokenized.charttime,
@@ -349,3 +347,5 @@ SELECT union_tokenized.stay_id,
         ) AS INTEGER
     ) AS percentile
 FROM union_tokenized
+ORDER BY union_tokenized.stay_id,
+    union_tokenized.charttime

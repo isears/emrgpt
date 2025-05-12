@@ -227,21 +227,17 @@ if __name__ == "__main__":
             ctes_for_union.append(build_table_stmt_infusion(tts, table))
 
     # Union all subqueries together
-    union_cte = (
-        union_all(
-            *[
-                select(
-                    cte.c.stay_id,
-                    cte.c.charttime,
-                    cte.c.token_label,
-                    cte.c.token_value,
-                )
-                for cte in ctes_for_union
-            ]
-        )
-        .order_by("stay_id", "charttime")
-        .cte("union_tokenized")
-    )
+    union_cte = union_all(
+        *[
+            select(
+                cte.c.stay_id,
+                cte.c.charttime,
+                cte.c.token_label,
+                cte.c.token_value,
+            )
+            for cte in ctes_for_union
+        ]
+    ).cte("union_tokenized")
 
     # Add percentile column
     stmt = select(
@@ -257,7 +253,7 @@ if __name__ == "__main__":
         )
         .cast(INTEGER)
         .label("percentile"),
-    )
+    ).order_by("stay_id", "charttime")
 
     print(
         stmt.compile(
