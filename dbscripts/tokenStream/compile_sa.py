@@ -407,11 +407,27 @@ if __name__ == "__main__":
         .cte("token_stream")
     )
 
+    unique_tokens_cte = (
+        select(token_stream_cte.c.token).select_from(token_stream_cte).group_by("token")
+    ).cte("unique_tokens")
+
+    d_tokens_cte = (
+        select(
+            func.row_number()
+            .over(order_by=unique_tokens_cte.c.token)
+            .label("token_id"),
+            unique_tokens_cte.c.token,
+        )
+        .select_from(unique_tokens_cte)
+        .cte("d_tokens")
+    )
+
     stmt = select(
         token_stream_cte.c.stay_id,
         token_stream_cte.c.charttime,
+        d_tokens_cte.c.token_id,
         token_stream_cte.c.token,
-    )
+    ).join(d_tokens_cte, d_tokens_cte.c.token == token_stream_cte.c.token)
 
     print("DROP TABLE IF EXISTS mimiciv_local.tokenevents;")
     print("CREATE TABLE mimiciv_local.tokenevents AS (")
@@ -425,16 +441,11 @@ if __name__ == "__main__":
         "CREATE INDEX IF NOT EXISTS sid_time ON mimiciv_local.tokenevents(stay_id, charttime);"
     )
 
-    unique_tokens = (
-        select(column("token"))
+    d_tokens = (
+        select(column("token_id"), column("token"))
         .select_from(text("mimiciv_local.tokenevents"))
-        .group_by("token")
-    ).cte("unique_tokens")
-
-    d_tokens = select(
-        func.row_number().over(order_by=unique_tokens.c.token).label("token_id"),
-        unique_tokens.c.token,
-    ).select_from(unique_tokens)
+        .group_by(column("token_id"), column("token"))
+    )
 
     print("DROP TABLE IF EXISTS mimiciv_local.d_tokens;")
     print("CREATE TABLE mimiciv_local.d_tokens AS (")

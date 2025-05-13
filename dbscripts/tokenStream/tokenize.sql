@@ -1270,24 +1270,33 @@ CREATE TABLE mimiciv_local.tokenevents AS (
             charttime,
             event_idx,
             sort_order
+    ),
+    unique_tokens AS (
+        SELECT token_stream.token AS token
+        FROM token_stream
+        GROUP BY token_stream.token
+    ),
+    d_tokens AS (
+        SELECT row_number() OVER (
+                ORDER BY unique_tokens.token
+            ) AS token_id,
+            unique_tokens.token AS token
+        FROM unique_tokens
     )
     SELECT token_stream.stay_id,
         token_stream.charttime,
+        d_tokens.token_id,
         token_stream.token
     FROM token_stream
+        JOIN d_tokens ON d_tokens.token = token_stream.token
 );
 CREATE INDEX IF NOT EXISTS sid_time ON mimiciv_local.tokenevents(stay_id, charttime);
 DROP TABLE IF EXISTS mimiciv_local.d_tokens;
 CREATE TABLE mimiciv_local.d_tokens AS (
-    WITH unique_tokens AS (
-        SELECT token
-        FROM mimiciv_local.tokenevents
-        GROUP BY token
-    )
-    SELECT row_number() OVER (
-            ORDER BY unique_tokens.token
-        ) AS token_id,
-        unique_tokens.token
-    FROM unique_tokens
+    SELECT token_id,
+        token
+    FROM mimiciv_local.tokenevents
+    GROUP BY token_id,
+        token
 );
 CREATE UNIQUE INDEX IF NOT EXISTS token_id ON mimiciv_local.d_tokens(token_id);
