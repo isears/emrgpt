@@ -9,18 +9,6 @@ CREATE TABLE mimiciv_local.d_tokens AS (
         -- 'Magnitude' token for expressing value after a measureable event
         SELECT 'magnitude.' || cast(magnitude_num AS TEXT)
         FROM generate_series(0, 9) AS magnitude_num
-        UNION ALL
-        -- 'Hour' token
-        SELECT 'hr.' || cast(hr_num AS TEXT)
-        FROM generate_series(0, 23) AS hr_num
-        UNION ALL
-        -- 'Special' tokens: death, discharge, admission, etc.
-        SELECT v.token_label
-        FROM(
-                VALUES ('mort'),
-                    ('discharge'),
-                    ('admission')
-            ) AS v(token_label)
     )
     SELECT row_number() over (
             ORDER BY token_label
