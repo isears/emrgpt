@@ -79,11 +79,13 @@ class TokenStreamDS(Dataset):
         )
 
         res = cursor.fetchall()
-        token_stream = torch.tensor(res).flatten()
+        token_stream = torch.tensor(res, dtype=torch.long).flatten()
 
         truncation_idx = torch.randint(1, len(token_stream) - 1, (1,)).item()
-        X = token_stream[:truncation_idx]
-        y = token_stream[: truncation_idx + 1]
+        start_idx = max(0, truncation_idx - self.block_size)
+        X = token_stream[start_idx:truncation_idx]
+        start_idx = max(0, (truncation_idx + 1) - self.block_size)
+        y = token_stream[start_idx : truncation_idx + 1]
 
         if len(X) < self.block_size:
             X = torch.nn.functional.pad(X, (self.block_size - len(X), 0))
@@ -97,6 +99,4 @@ class TokenStreamDS(Dataset):
 if __name__ == "__main__":
     ds = TokenStreamDS(block_size=256)
 
-    for X, y in ds:
-        print(X)
-        print(y)
+    out = ds[5406]
