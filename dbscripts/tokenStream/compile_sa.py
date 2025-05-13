@@ -1,3 +1,4 @@
+# NOTE: unsafe sql query construction
 from sqlalchemy import (
     create_engine,
     Table,
@@ -240,6 +241,7 @@ if __name__ == "__main__":
         "icustay_detail", metadata, autoload_with=engine, schema="mimiciv_derived"
     )
 
+    # Generate event tokens
     ctes_for_union = list()
 
     for tts in TTSs:
@@ -256,6 +258,68 @@ if __name__ == "__main__":
         elif tts.event_type == "infusion":
             ctes_for_union.append(build_table_stmt_infusion(tts, table))
 
+    # Generate special tokens (hr, admission, discharge, death)
+    hour_cte = (
+        select(
+            icustays.c.stay_id,
+            func.generate_series(
+                func.date_trunc("hour", icustays.c.icu_intime),
+                func.date_trunc("hour", icustays.c.icu_outtime),
+                "1 hour",
+            ).label("charttime"),
+            func.concat(
+                "hour.",
+                extract(
+                    "hour",
+                    func.generate_series(
+                        func.date_trunc("hour", icustays.c.icu_intime),
+                        func.date_trunc("hour", icustays.c.icu_outtime),
+                        "1 hour",
+                    ),
+                ),
+            ).label("token_label"),
+            cast(None, DOUBLE_PRECISION).label("token_value"),
+        )
+        .select_from(icustays)
+        .cte("hour_events")
+    )
+
+    admission_cte = (
+        select(
+            icustays.c.stay_id,
+            icustays.c.icu_intime.label("charttime"),
+            literal("admission").label("token_label"),
+            cast(None, DOUBLE_PRECISION).label("token_value"),
+        )
+        .select_from(icustays)
+        .cte("admission_events")
+    )
+
+    discharge_cte = (
+        select(
+            icustays.c.stay_id,
+            icustays.c.icu_outtime.label("charttime"),
+            literal("discharge").label("token_label"),
+            cast(None, DOUBLE_PRECISION).label("token_value"),
+        )
+        .select_from(icustays)
+        .cte("discharge_events")
+    )
+
+    mort_cte = (
+        select(
+            icustays.c.stay_id,
+            icustays.c.dischtime.label("charttime"),
+            literal("mort").label("token_label"),
+            cast(None, DOUBLE_PRECISION).label("token_value"),
+        )
+        .select_from(icustays)
+        .where(icustays.c.hospital_expire_flag == 1)
+        .cte("mort_events")
+    )
+
+    ctes_for_union += [hour_cte, admission_cte, discharge_cte, mort_cte]
+
     # Union all subqueries together
     union_cte = union_all(
         *[
@@ -269,7 +333,8 @@ if __name__ == "__main__":
         ]
     ).cte("union_tokenized")
 
-    # Add percentile column
+    # Token value discretization
+    # TODO: currently deciles, consider full percentile
     stmt = select(
         union_cte.c.stay_id,
         union_cte.c.charttime,
@@ -282,7 +347,7 @@ if __name__ == "__main__":
             * 10
         )
         .cast(INTEGER)
-        .label("percentile"),
+        .label("token_value_disc"),
     ).order_by("stay_id", "charttime")
 
     print("DROP TABLE IF EXISTS mimiciv_local.tokenevents;")

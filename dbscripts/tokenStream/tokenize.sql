@@ -1047,6 +1047,61 @@ CREATE TABLE mimiciv_local.tokenevents AS (
             ) AS tokens (token_label, token_value, token_null) ON true
         WHERE NOT tokens.token_null
     ),
+    hour_events AS (
+        SELECT mimiciv_derived.icustay_detail.stay_id AS stay_id,
+            generate_series(
+                date_trunc(
+                    'hour',
+                    mimiciv_derived.icustay_detail.icu_intime
+                ),
+                date_trunc(
+                    'hour',
+                    mimiciv_derived.icustay_detail.icu_outtime
+                ),
+                '1 hour'
+            ) AS charttime,
+            concat(
+                'hour.',
+                EXTRACT(
+                    hour
+                    FROM generate_series(
+                            date_trunc(
+                                'hour',
+                                mimiciv_derived.icustay_detail.icu_intime
+                            ),
+                            date_trunc(
+                                'hour',
+                                mimiciv_derived.icustay_detail.icu_outtime
+                            ),
+                            '1 hour'
+                        )
+                )
+            ) AS token_label,
+            CAST(NULL AS DOUBLE PRECISION) AS token_value
+        FROM mimiciv_derived.icustay_detail
+    ),
+    admission_events AS (
+        SELECT mimiciv_derived.icustay_detail.stay_id AS stay_id,
+            mimiciv_derived.icustay_detail.icu_intime AS charttime,
+            'admission' AS token_label,
+            CAST(NULL AS DOUBLE PRECISION) AS token_value
+        FROM mimiciv_derived.icustay_detail
+    ),
+    discharge_events AS (
+        SELECT mimiciv_derived.icustay_detail.stay_id AS stay_id,
+            mimiciv_derived.icustay_detail.icu_outtime AS charttime,
+            'discharge' AS token_label,
+            CAST(NULL AS DOUBLE PRECISION) AS token_value
+        FROM mimiciv_derived.icustay_detail
+    ),
+    mort_events AS (
+        SELECT mimiciv_derived.icustay_detail.stay_id AS stay_id,
+            mimiciv_derived.icustay_detail.dischtime AS charttime,
+            'mort' AS token_label,
+            CAST(NULL AS DOUBLE PRECISION) AS token_value
+        FROM mimiciv_derived.icustay_detail
+        WHERE mimiciv_derived.icustay_detail.hospital_expire_flag = 1
+    ),
     union_tokenized AS (
         SELECT vitalsign_tokenized.stay_id AS stay_id,
             vitalsign_tokenized.charttime AS charttime,
@@ -1137,6 +1192,30 @@ CREATE TABLE mimiciv_local.tokenevents AS (
             rhythm_tokenized.token_label AS token_label,
             rhythm_tokenized.token_value AS token_value
         FROM rhythm_tokenized
+        UNION ALL
+        SELECT hour_events.stay_id AS stay_id,
+            hour_events.charttime AS charttime,
+            hour_events.token_label AS token_label,
+            hour_events.token_value AS token_value
+        FROM hour_events
+        UNION ALL
+        SELECT admission_events.stay_id AS stay_id,
+            admission_events.charttime AS charttime,
+            admission_events.token_label AS token_label,
+            admission_events.token_value AS token_value
+        FROM admission_events
+        UNION ALL
+        SELECT discharge_events.stay_id AS stay_id,
+            discharge_events.charttime AS charttime,
+            discharge_events.token_label AS token_label,
+            discharge_events.token_value AS token_value
+        FROM discharge_events
+        UNION ALL
+        SELECT mort_events.stay_id AS stay_id,
+            mort_events.charttime AS charttime,
+            mort_events.token_label AS token_label,
+            mort_events.token_value AS token_value
+        FROM mort_events
     )
     SELECT union_tokenized.stay_id,
         union_tokenized.charttime,
@@ -1147,9 +1226,9 @@ CREATE TABLE mimiciv_local.tokenevents AS (
                 percent_rank() OVER (
                     PARTITION BY union_tokenized.token_label
                     ORDER BY union_tokenized.token_value
-                ) * 100
+                ) * 10
             ) AS INTEGER
-        ) AS percentile
+        ) AS token_value_disc
     FROM union_tokenized
     ORDER BY union_tokenized.stay_id,
         union_tokenized.charttime
