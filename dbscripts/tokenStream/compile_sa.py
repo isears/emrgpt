@@ -335,20 +335,83 @@ if __name__ == "__main__":
 
     # Token value discretization
     # TODO: currently deciles, consider full percentile
-    stmt = select(
-        union_cte.c.stay_id,
-        union_cte.c.charttime,
-        union_cte.c.token_label,
-        union_cte.c.token_value,
-        func.floor(
-            func.percent_rank().over(
-                partition_by=union_cte.c.token_label, order_by=union_cte.c.token_value
+    # TODO: this discretizes to the int range 0 - 10 (inclusive) so effectively 11 bins
+    # Bin 10 will only be the bin of MAXIMUM measurements over the enitre dataset
+    # Bin 10 will be much smaller than the others, often times only one row will be descritized to 10
+    # This is obviously not ideal
+    # Additionally, a lot of 'interesting' things happen at the 10th and 90th percentiles
+    # Linear discretization may not be as effective as a discretization scheme
+    # That would add more detail at the tails of the distribution (?sigmoid)
+    token_value_cte = (
+        select(
+            union_cte.c.stay_id,
+            union_cte.c.charttime,
+            union_cte.c.token_label,
+            union_cte.c.token_value,
+            func.floor(
+                func.percent_rank().over(
+                    partition_by=union_cte.c.token_label,
+                    order_by=union_cte.c.token_value,
+                )
+                * 10
             )
-            * 10
+            .cast(INTEGER)
+            .label("token_value_disc"),
         )
-        .cast(INTEGER)
-        .label("token_value_disc"),
-    ).order_by("stay_id", "charttime")
+        .order_by("stay_id", "charttime")
+        .cte("token_values")
+    )
+
+    # Convert to raw even stream rather than token, value pair stream
+    numbered_events_cte = (
+        select(
+            token_value_cte.c.stay_id,
+            token_value_cte.c.charttime,
+            token_value_cte.c.token_label,
+            token_value_cte.c.token_value,
+            token_value_cte.c.token_value_disc,
+            func.row_number()
+            .over(
+                partition_by=(token_value_cte.c.stay_id, token_value_cte.c.charttime),
+                order_by=(token_value_cte.c.token_label, token_value_cte.c.token_value),
+            )
+            .label("event_idx"),
+        )
+        .select_from(token_value_cte)
+        .cte("numbered_events")
+    )
+
+    token_stream_cte = (
+        union_all(
+            select(
+                numbered_events_cte.c.stay_id,
+                numbered_events_cte.c.charttime,
+                numbered_events_cte.c.token_label.label("token"),
+                numbered_events_cte.c.event_idx,
+                literal(1).label("sort_order"),
+            ).select_from(numbered_events_cte),
+            select(
+                numbered_events_cte.c.stay_id,
+                numbered_events_cte.c.charttime,
+                func.concat(
+                    literal("magnitude."),
+                    cast(numbered_events_cte.c.token_value_disc, TEXT),
+                ).label("token"),
+                numbered_events_cte.c.event_idx,
+                literal(2).label("sort_order"),
+            )
+            .select_from(numbered_events_cte)
+            .where(numbered_events_cte.c.token_value != None),
+        )
+        .order_by("stay_id", "charttime", "event_idx", "sort_order")
+        .cte("token_stream")
+    )
+
+    stmt = select(
+        token_stream_cte.c.stay_id,
+        token_stream_cte.c.charttime,
+        token_stream_cte.c.token,
+    )
 
     print("DROP TABLE IF EXISTS mimiciv_local.tokenevents;")
     print("CREATE TABLE mimiciv_local.tokenevents AS (")
@@ -360,4 +423,27 @@ if __name__ == "__main__":
     print(");")
     print(
         "CREATE INDEX IF NOT EXISTS sid_time ON mimiciv_local.tokenevents(stay_id, charttime);"
+    )
+
+    unique_tokens = (
+        select(column("token"))
+        .select_from(text("mimiciv_local.tokenevents"))
+        .group_by("token")
+    ).cte("unique_tokens")
+
+    d_tokens = select(
+        func.row_number().over(order_by=unique_tokens.c.token).label("token_id"),
+        unique_tokens.c.token,
+    ).select_from(unique_tokens)
+
+    print("DROP TABLE IF EXISTS mimiciv_local.d_tokens;")
+    print("CREATE TABLE mimiciv_local.d_tokens AS (")
+    print(
+        d_tokens.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    print(");")
+    print(
+        "CREATE UNIQUE INDEX IF NOT EXISTS token_id ON mimiciv_local.d_tokens(token_id);"
     )

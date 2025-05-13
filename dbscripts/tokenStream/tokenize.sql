@@ -1216,21 +1216,78 @@ CREATE TABLE mimiciv_local.tokenevents AS (
             mort_events.token_label AS token_label,
             mort_events.token_value AS token_value
         FROM mort_events
+    ),
+    token_values AS (
+        SELECT union_tokenized.stay_id AS stay_id,
+            union_tokenized.charttime AS charttime,
+            union_tokenized.token_label AS token_label,
+            union_tokenized.token_value AS token_value,
+            CAST(
+                floor(
+                    percent_rank() OVER (
+                        PARTITION BY union_tokenized.token_label
+                        ORDER BY union_tokenized.token_value
+                    ) * 10
+                ) AS INTEGER
+            ) AS token_value_disc
+        FROM union_tokenized
+        ORDER BY union_tokenized.stay_id,
+            union_tokenized.charttime
+    ),
+    numbered_events AS (
+        SELECT token_values.stay_id AS stay_id,
+            token_values.charttime AS charttime,
+            token_values.token_label AS token_label,
+            token_values.token_value AS token_value,
+            token_values.token_value_disc AS token_value_disc,
+            row_number() OVER (
+                PARTITION BY token_values.stay_id,
+                token_values.charttime
+                ORDER BY token_values.token_label,
+                    token_values.token_value
+            ) AS event_idx
+        FROM token_values
+    ),
+    token_stream AS (
+        SELECT numbered_events.stay_id AS stay_id,
+            numbered_events.charttime AS charttime,
+            numbered_events.token_label AS token,
+            numbered_events.event_idx AS event_idx,
+            1 AS sort_order
+        FROM numbered_events
+        UNION ALL
+        SELECT numbered_events.stay_id AS stay_id,
+            numbered_events.charttime AS charttime,
+            concat(
+                'magnitude.',
+                CAST(numbered_events.token_value_disc AS TEXT)
+            ) AS token,
+            numbered_events.event_idx AS event_idx,
+            2 AS sort_order
+        FROM numbered_events
+        WHERE numbered_events.token_value IS NOT NULL
+        ORDER BY stay_id,
+            charttime,
+            event_idx,
+            sort_order
     )
-    SELECT union_tokenized.stay_id,
-        union_tokenized.charttime,
-        union_tokenized.token_label,
-        union_tokenized.token_value,
-        CAST(
-            floor(
-                percent_rank() OVER (
-                    PARTITION BY union_tokenized.token_label
-                    ORDER BY union_tokenized.token_value
-                ) * 10
-            ) AS INTEGER
-        ) AS token_value_disc
-    FROM union_tokenized
-    ORDER BY union_tokenized.stay_id,
-        union_tokenized.charttime
+    SELECT token_stream.stay_id,
+        token_stream.charttime,
+        token_stream.token
+    FROM token_stream
 );
 CREATE INDEX IF NOT EXISTS sid_time ON mimiciv_local.tokenevents(stay_id, charttime);
+DROP TABLE IF EXISTS mimiciv_local.d_tokens;
+CREATE TABLE mimiciv_local.d_tokens AS (
+    WITH unique_tokens AS (
+        SELECT token
+        FROM mimiciv_local.tokenevents
+        GROUP BY token
+    )
+    SELECT row_number() OVER (
+            ORDER BY unique_tokens.token
+        ) AS token_id,
+        unique_tokens.token
+    FROM unique_tokens
+);
+CREATE UNIQUE INDEX IF NOT EXISTS token_id ON mimiciv_local.d_tokens(token_id);
