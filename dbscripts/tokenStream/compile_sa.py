@@ -16,6 +16,7 @@ from sqlalchemy import (
     NUMERIC,
     INTEGER,
     TEXT,
+    VARCHAR,
     and_,
     union_all,
 )
@@ -50,6 +51,7 @@ class TableTokenizationSpec:
             "charttime",
             "starttime",
             "endtime",
+            "stoptime",
         ]
 
     def get_numeric_columns(self, table: Table):
@@ -66,7 +68,11 @@ class TableTokenizationSpec:
         return [
             i.name
             for i in table.c
-            if (isinstance(i.type, TEXT) or isinstance(i.type, INTEGER))
+            if (
+                isinstance(i.type, TEXT)
+                or isinstance(i.type, INTEGER)
+                or isinstance(i.type, VARCHAR)
+            )
             and i.name not in tts.ignore_cols
             and i.name not in tts.modulated_cols.keys()
             and i.name not in tts.modulated_cols.values()
@@ -83,6 +89,18 @@ TTSs = [
     TableTokenizationSpec("crrt", "onetime"),
     TableTokenizationSpec("norepinephrine_equivalent_dose", "infusion"),
     TableTokenizationSpec("chemistry", "onetime", ["aniongap"], needs_alignment=True),
+    TableTokenizationSpec("complete_blood_count", "onetime", needs_alignment=True),
+    TableTokenizationSpec("blood_differential", "onetime", needs_alignment=True),
+    # TODO: specimen column should be a modulator column for all other columns in bg
+    TableTokenizationSpec("bg", "onetime", needs_alignment=True),
+    # TODO: categorical infusion-types
+    # TableTokenizationSpec("antibiotic", "infusion"),
+    TableTokenizationSpec("cardiac_marker", "onetime", needs_alignment=True),
+    TableTokenizationSpec("coagulation", "onetime", needs_alignment=True),
+    TableTokenizationSpec("enzyme", "onetime", needs_alignment=True),
+    TableTokenizationSpec("icp", "onetime"),
+    TableTokenizationSpec("urine_output", "onetime"),
+    TableTokenizationSpec("ventilator_setting", "onetime"),
 ]
 
 
@@ -255,8 +273,14 @@ if __name__ == "__main__":
         .label("percentile"),
     ).order_by("stay_id", "charttime")
 
+    print("DROP TABLE IF EXISTS mimiciv_local.tokenevents;")
+    print("CREATE TABLE mimiciv_local.tokenevents AS (")
     print(
         stmt.compile(
             dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
         )
+    )
+    print(");")
+    print(
+        "CREATE INDEX IF NOT EXISTS sid_time ON mimiciv_local.tokenevents(stay_id, charttime);"
     )
