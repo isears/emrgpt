@@ -101,6 +101,18 @@ TTSs = [
     TableTokenizationSpec("icp", "onetime"),
     TableTokenizationSpec("urine_output", "onetime"),
     TableTokenizationSpec("ventilator_setting", "onetime"),
+    TableTokenizationSpec("inflammation", "onetime", needs_alignment=True),
+    # TODO: modulated infusion-types
+    # TableTokenizationSpec(
+    #     "invasive_line", "infusion", modulated_cols={"line_site": "line_type"}
+    # ),
+    # TODO: may be able to use some of these ignored columns
+    TableTokenizationSpec(
+        "rhythm",
+        "onetime",
+        ["ectopy_frequency", "ectopy_type_secondary", "ectopy_frequency_secondary"],
+        needs_alignment=True,
+    ),
 ]
 
 
@@ -119,7 +131,7 @@ def build_table_stmt_onetime(tts: TableTokenizationSpec, table: Table):
             func.concat(
                 literal(f"{tts.table_name}.{cname}."), cast(table.c[cname], TEXT)
             ),
-            None,
+            cast(None, DOUBLE_PRECISION),
             table.c[cname] == None,
         )
         for cname in categorical_cols
@@ -201,7 +213,7 @@ def do_alignment(tts: TableTokenizationSpec, table: Table, icustays: Table):
             table.join(
                 icustays,
                 and_(
-                    table.c.hadm_id == icustays.c.hadm_id,
+                    table.c.subject_id == icustays.c.subject_id,
                     table.c.charttime >= icustays.c.icu_intime,
                     table.c.charttime <= icustays.c.icu_outtime,
                 ),
@@ -267,7 +279,7 @@ if __name__ == "__main__":
             func.percent_rank().over(
                 partition_by=union_cte.c.token_label, order_by=union_cte.c.token_value
             )
-            * 100
+            * 10
         )
         .cast(INTEGER)
         .label("percentile"),
