@@ -4,4 +4,4 @@ CREATE TABLE mimiciv_local.splits AS (
         random() * 100 > 90 AS testset
     FROM mimiciv_derived.icustay_detail
 );
-CREATE UNIQUE INDEX sid ON mimiciv_local.splits(stay_id);
+CREATE UNIQUE INDEX splits_sid ON mimiciv_local.splits(stay_id);
