@@ -49,8 +49,8 @@ if __name__ == "__main__":
     val_dl = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=DL_WORKERS)
 
     model = TokenStreamGPT(
-        vocab_size=ds.vocab_size,
-        memory_size=ds.memory_size,
+        vocab_size=ds.postgresUtil.vocab_size,
+        memory_size=ds.postgresUtil.memory_size,
         n_embd=N_EMBD,
         block_size=BLOCK_SIZE,
         n_head=N_HEAD,

@@ -6,28 +6,14 @@ import torch
 import numpy as np
 
 
-class TokenStreamDS(Dataset):
-
-    def __init__(self, block_size: int, testset: bool = False):
+class PostgresUtil:
+    def __init__(self):
         super().__init__()
-
-        self.block_size = block_size
+        self.conn = None
+        self.conn_initialized = False
 
         c = psycopg2.connect("")
         cursor = c.cursor()
-
-        # Get stay ids
-        cursor.execute(
-            """
-            --sql
-            SELECT stay_id FROM mimiciv_local.splits
-            WHERE testset = %s;
-            """,
-            ("true" if testset else "false",),
-        )
-
-        res = cursor.fetchall()
-        self.stay_ids = [i[0] for i in res]
 
         # Get vocab
         cursor.execute(
@@ -66,13 +52,6 @@ class TokenStreamDS(Dataset):
         self.memory_size = res[0][0] + 2
 
         c.close()
-        self.conn = None  # will lazy init later
-        self.conn_initialized = False
-
-        print("Initiated dataset with:")
-        print(f"\tICU stays: {len(self.stay_ids)}")
-        print(f"\tVocab size: {self.vocab_size}")
-        print(f"\tBlock size: {self.block_size}")
 
     def _lazy_init(self):
         if not self.conn_initialized:
@@ -84,9 +63,6 @@ class TokenStreamDS(Dataset):
         print("Dataset teardown called")
         if self.conn is not None:
             self.conn.close()
-
-    def __len__(self):
-        return len(self.stay_ids)
 
     def _build_memory_vector(
         self, stay_id: int, X: torch.Tensor, history: torch.Tensor
@@ -145,7 +121,7 @@ class TokenStreamDS(Dataset):
             los_hours = (history.unsqueeze(0) == self._hourtokens.unsqueeze(1)).sum()
             # Also log-normalizing los-icu
             # TODO: actually assign this!
-            np.log(los_hours + 1) / np.log(5434)
+            los_hours = np.log(los_hours + 1) / np.log(5434)
 
         memory = torch.tensor(
             list(static_feats.values()) + [last_dose, los_hours], dtype=torch.float
@@ -154,11 +130,8 @@ class TokenStreamDS(Dataset):
         assert len(memory) == self.memory_size
         return memory
 
-    def __getitem__(self, index):
+    def _get_token_stream(self, stay_id: int):
         self._lazy_init()
-
-        stay_id = self.stay_ids[index]
-
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -172,6 +145,46 @@ class TokenStreamDS(Dataset):
 
         res = cursor.fetchall()
         token_stream = torch.tensor(res, dtype=torch.long).flatten()
+        return token_stream
+
+
+class TokenStreamDS(Dataset):
+
+    def __init__(self, block_size: int, testset: bool = False):
+        super().__init__()
+        self.postgresUtil = PostgresUtil()
+
+        self.block_size = block_size
+
+        c = psycopg2.connect("")
+        cursor = c.cursor()
+
+        # Get stay ids
+        cursor.execute(
+            """
+            --sql
+            SELECT stay_id FROM mimiciv_local.splits
+            WHERE testset = %s;
+            """,
+            ("true" if testset else "false",),
+        )
+
+        res = cursor.fetchall()
+        self.stay_ids = [i[0] for i in res]
+
+        c.close()
+
+        print("Initiated dataset with:")
+        print(f"\tICU stays: {len(self.stay_ids)}")
+        print(f"\tVocab size: {self.postgresUtil.vocab_size}")
+        print(f"\tBlock size: {self.block_size}")
+
+    def __len__(self):
+        return len(self.stay_ids)
+
+    def __getitem__(self, index):
+        stay_id = self.stay_ids[index]
+        token_stream = self.postgresUtil._get_token_stream(stay_id)
 
         truncation_idx = torch.randint(1, len(token_stream) - 1, (1,)).item()
         start_idx = max(0, truncation_idx - self.block_size)
@@ -188,7 +201,7 @@ class TokenStreamDS(Dataset):
         if len(y) < self.block_size + 1:
             y = torch.nn.functional.pad(y, ((self.block_size + 1) - len(y), 0))
 
-        memory = self._build_memory_vector(stay_id, X, history)
+        memory = self.postgresUtil._build_memory_vector(stay_id, X, history)
 
         assert len(X) == self.block_size
         assert len(y) == self.block_size + 1
