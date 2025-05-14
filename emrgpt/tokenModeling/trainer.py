@@ -23,8 +23,8 @@ VAL_CHECK_INTERVAL = 200
 
 
 def calculate_losses(m: TokenStreamGPT, batch: torch.Tensor):
-    X, y = batch
-    logits = m(X.to(DEVICE))
+    X, memory, y = batch
+    logits = m(X.to(DEVICE), memory.to(DEVICE))
 
     B, T, C = logits.shape
 
@@ -50,6 +50,7 @@ if __name__ == "__main__":
 
     model = TokenStreamGPT(
         vocab_size=ds.vocab_size,
+        memory_size=ds.memory_size,
         n_embd=N_EMBD,
         block_size=BLOCK_SIZE,
         n_head=N_HEAD,
@@ -59,8 +60,9 @@ if __name__ == "__main__":
 
     summary(
         model,
-        input_data=torch.zeros(
-            (BATCH_SIZE, BLOCK_SIZE), dtype=torch.long, device=DEVICE
+        input_data=(
+            torch.zeros((BATCH_SIZE, BLOCK_SIZE), dtype=torch.long, device=DEVICE),
+            torch.zeros((BATCH_SIZE, ds.memory_size), dtype=torch.float, device=DEVICE),
         ),
     )
 

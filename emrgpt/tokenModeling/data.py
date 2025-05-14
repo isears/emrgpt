@@ -42,6 +42,27 @@ class TokenStreamDS(Dataset):
         self.id2token_map = {**{i[0]: i[1] for i in res}, **{0: "nop"}}
         self.token2id_map = {**{i[1]: i[0] for i in res}, **{"nop": 0}}
         self.vocab_size = len(self.id2token_map)
+        # Precompute so can be used later
+        self._hourtokens = torch.tensor(
+            [v for k, v in self.token2id_map.items() if k.startswith("hour.")],
+            dtype=torch.long,
+        )
+        assert len(self._hourtokens) == 24
+
+        # Get memory vector size
+        cursor.execute(
+            """
+            --sql
+            SELECT count(*) FROM information_schema.columns WHERE 
+            table_name = 'staticfeats' AND table_schema = 'mimiciv_local' 
+            AND column_name != 'stay_id';
+            """
+        )
+
+        res = cursor.fetchall()
+        # TODO: will need to add more complex logic once have more drugs
+        # For now manually +1 for norepi and +1 for icu_los
+        self.memory_size = res[0][0] + 2
 
         c.close()
         self.conn = None  # will lazy init later
@@ -95,11 +116,12 @@ class TokenStreamDS(Dataset):
         static_feats["age"] = static_feats["age"] / 120
         static_feats["gender"] = 1.0 if static_feats["gender"] == "F" else 0.0
         static_feats["height"] = static_feats["height"] / 200
-        static_feats["weight"] = np.log(static_feats["weight"]) / np.log(635)
+        static_feats["weight"] = np.log(static_feats["weight"] + 1) / np.log(635)
 
         # TODO: for now just looking for norepinephrine outside the context window
         # Will have to be more thorough about this in the future when have more meds
         last_dose = 0.0
+        los_hours = 0.0
         if history is not None:
             indices = (
                 history == self.token2id_map["norepinephrine_equivalent_dose.rate"]
@@ -112,15 +134,23 @@ class TokenStreamDS(Dataset):
                 if last_index != len(history) - 1:
                     last_dose_token = self.id2token_map[history[last_index + 1].item()]
                 else:
-                    last_dose_token = self.id2token_map[X[0]]
+                    last_dose_token = self.id2token_map[X[0].item()]
 
                 assert last_dose_token.startswith("magnitude.")
                 last_dose = int(last_dose_token.split(".")[-1]) / 10
                 assert last_dose >= 0 and last_dose <= 1
 
-        return torch.tensor(
-            list(static_feats.values()) + [last_dose], dtype=torch.float
+            # Count # of hour events that have transpired in history
+            los_hours = (history.unsqueeze(0) == self._hourtokens.unsqueeze(1)).sum()
+            # Also log-normalizing los-icu
+            np.log(los_hours + 1) / np.log(5434)
+
+        memory = torch.tensor(
+            list(static_feats.values()) + [last_dose, los_hours], dtype=torch.float
         )
+
+        assert len(memory) == self.memory_size
+        return memory
 
     def __getitem__(self, index):
         self._lazy_init()
@@ -148,16 +178,19 @@ class TokenStreamDS(Dataset):
             history = token_stream[0:start_idx]
         else:
             history = None
-        start_idx = max(0, (truncation_idx + 1) - self.block_size)
         y = token_stream[start_idx : truncation_idx + 1]
 
         if len(X) < self.block_size:
             X = torch.nn.functional.pad(X, (self.block_size - len(X), 0))
 
-        if len(y) < self.block_size:
-            y = torch.nn.functional.pad(y, (self.block_size - len(y), 0))
+        if len(y) < self.block_size + 1:
+            y = torch.nn.functional.pad(y, ((self.block_size + 1) - len(y), 0))
 
         memory = self._build_memory_vector(stay_id, X, history)
+
+        assert len(X) == self.block_size
+        assert len(y) == self.block_size + 1
+        assert len(memory) == self.memory_size
 
         return X, memory, y
 
