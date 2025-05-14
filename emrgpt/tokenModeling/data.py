@@ -8,7 +8,7 @@ import numpy as np
 
 class TokenStreamDS(Dataset):
 
-    def __init__(self, block_size: int):
+    def __init__(self, block_size: int, testset: bool = False):
         super().__init__()
 
         self.block_size = block_size
@@ -21,8 +21,9 @@ class TokenStreamDS(Dataset):
             """
             --sql
             SELECT stay_id FROM mimiciv_local.splits
-            WHERE testset = false;
-            """
+            WHERE testset = %s;
+            """,
+            ("true" if testset else "false",),
         )
 
         res = cursor.fetchall()
@@ -143,6 +144,7 @@ class TokenStreamDS(Dataset):
             # Count # of hour events that have transpired in history
             los_hours = (history.unsqueeze(0) == self._hourtokens.unsqueeze(1)).sum()
             # Also log-normalizing los-icu
+            # TODO: actually assign this!
             np.log(los_hours + 1) / np.log(5434)
 
         memory = torch.tensor(

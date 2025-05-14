@@ -44,4 +44,55 @@ class TokenStreamGPT(nn.Module):
 
         return logits
 
-    def generate(self, seed: torch.Tensor) -> torch.Tensor: ...
+    def generate(
+        self,
+        seed: torch.Tensor,
+        memory: torch.Tensor,
+        lookahead_hrs: int,
+        hourtokens: torch.Tensor,
+    ) -> torch.Tensor:
+        assert seed.ndim == 2
+        B, T = seed.shape
+        assert T == self.block_size
+
+        generated_tokens = torch.tensor([], dtype=torch.long, device=seed.device)
+        hour_counts = torch.zeros((B,), dtype=torch.int, device=seed.device)
+        hourtokens = hourtokens.to(seed.device)
+
+        while not (hour_counts >= lookahead_hrs).all():
+            generated_count = (
+                generated_tokens.shape[1] if generated_tokens.ndim == 2 else 0
+            )
+
+            # TODO: need some way to update memory
+
+            if generated_count < self.block_size:
+                x = torch.cat(
+                    [
+                        seed[:, generated_count:],
+                        generated_tokens,
+                    ],
+                    dim=1,
+                )
+            else:
+                x = generated_tokens[:, (generated_count - self.block_size) :]
+
+            assert x.ndim == 2
+            assert x.shape[0] == B
+            assert x.shape[1] == T
+
+            logits = self(x, memory)[:, -1, :]
+            probs = F.softmax(logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            hour_counts += (next_token == hourtokens.unsqueeze(0)).sum(dim=1)
+            # zero-out any event that happen after lookahead hours
+            # may help downstream tasks recognize when sequence has ended
+            # NOTE: this potentially wastes a lot of computation for large batches
+            next_token = next_token.squeeze() * (hour_counts <= lookahead_hrs)
+            generated_tokens = torch.cat(
+                (generated_tokens, next_token.unsqueeze(1)), dim=1
+            )
+            pass
+
+        return generated_tokens
