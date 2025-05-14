@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS mimiciv_local.staticfeats;
 CREATE TABLE mimiciv_local.staticfeats AS (
     SELECT i.stay_id,
-        i.admission_age,
+        i.admission_age AS age,
         i.gender,
         c.myocardial_infarct,
         c.congestive_heart_failure,
@@ -22,7 +22,7 @@ CREATE TABLE mimiciv_local.staticfeats AS (
         c.metastatic_solid_tumor,
         c.aids,
         h.height,
-        w.weight_admit
+        w.weight_admit AS weight
     FROM mimiciv_derived.icustay_detail i
         LEFT JOIN mimiciv_derived.charlson c ON i.hadm_id = c.hadm_id
         LEFT JOIN mimiciv_derived.first_day_height h ON h.stay_id = i.stay_id
