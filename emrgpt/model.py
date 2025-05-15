@@ -1,140 +1,98 @@
-"""
-Inspired by Andrej Karpathy's nanoGPT
-https://github.com/karpathy/ng-video-lecture
-"""
-
-import torch.nn as nn
-import torch
-from torch.nn import functional as F
-import math
+from emrgpt.ak_transformer import *
 
 
-class AkSelfAttentionHead(nn.Module):
-    def __init__(self, n_embd: int, head_size: int, block_size: int, dropout: float):
-        super().__init__()
-        self.key = nn.Linear(n_embd, head_size, bias=False)
-        self.query = nn.Linear(n_embd, head_size, bias=False)
-        self.value = nn.Linear(n_embd, head_size, bias=False)
-        self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
+class TokenStreamGPT(nn.Module):
 
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor):
-        B, T, C = x.shape
-        k = self.key(x)
-        q = self.query(x)
-
-        wei = q @ k.transpose(-2, -1) * C**-0.5
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
-        wei = F.softmax(wei, dim=-1)
-        wei = self.dropout(wei)
-
-        v = self.value(x)
-        out = wei @ v
-        return out
-
-
-class AkMultiHeadAttention(nn.Module):
     def __init__(
         self,
-        num_heads: int,
+        vocab_size: int,
+        memory_size: int,
         n_embd: int,
-        head_size: int,
-        block_size: int,
         dropout: float,
+        block_size: int,
+        n_layer: int,
+        n_head: int,
     ):
         super().__init__()
-        self.heads = nn.ModuleList(
-            [
-                AkSelfAttentionHead(n_embd, head_size, block_size, dropout)
-                for _ in range(num_heads)
+
+        self.block_size = block_size
+        self.n_embd = n_embd
+        self.vocab_size = vocab_size
+
+        self.embedding_table = nn.Embedding(vocab_size, n_embd)
+        self.memory_projection = nn.Linear(memory_size, n_embd)
+        self.positional_encoding = FixedPositionalEncoding(
+            n_embd, block_size + 1, dropout
+        )
+        self.blocks = nn.Sequential(
+            *[
+                AkDecoderBlock(n_embd, n_head, block_size + 1, dropout)
+                for _ in range(n_layer)
             ]
         )
-        self.proj = nn.Linear(num_heads * head_size, n_embd)
-        self.dropout = nn.Dropout(dropout)
+        self.ln_f = nn.LayerNorm(n_embd)
+        self.lm_head = nn.Linear(n_embd, vocab_size)
 
-    def forward(self, x):
-        out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.dropout(self.proj(out))
-        return out
+    def forward(self, x: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
+        x_embd = self.embedding_table(x)  # (B,T,C)
+        mem_proj = self.memory_projection(memory)
+        x_mem = torch.cat((mem_proj.unsqueeze(1), x_embd), dim=1)
+        out = self.positional_encoding(x_mem.permute(1, 0, 2)).permute(1, 0, 2)
+        out = self.blocks(out)
+        out = self.ln_f(out)
+        logits = self.lm_head(out)
 
+        return logits
 
-class FeedForward(nn.Module):
+    def generate(
+        self,
+        seed: torch.Tensor,
+        memory: torch.Tensor,
+        lookahead_hrs: int,
+        hourtokens: torch.Tensor,
+    ) -> torch.Tensor:
+        assert seed.ndim == 2
+        B, T = seed.shape
+        assert T == self.block_size
 
-    def __init__(self, n_embd: int, dropout: float):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(n_embd, 4 * n_embd),
-            nn.ReLU(),
-            nn.Linear(4 * n_embd, n_embd),
-            nn.Dropout(dropout),
-        )
+        generated_tokens = torch.tensor([], dtype=torch.long, device=seed.device)
+        hour_counts = torch.zeros((B,), dtype=torch.int, device=seed.device)
+        hourtokens = hourtokens.to(seed.device)
 
-    def forward(self, x):
-        return self.net(x)
+        while not (hour_counts >= lookahead_hrs).all():
+            generated_count = (
+                generated_tokens.shape[1] if generated_tokens.ndim == 2 else 0
+            )
 
+            # TODO: need some way to update memory
 
-class AkDecoderBlock(nn.Module):
-    def __init__(self, n_embd: int, n_head: int, block_size: int, dropout: float):
-        super().__init__()
-        head_size = n_embd // n_head
-        self.self_attention = AkMultiHeadAttention(
-            num_heads=n_head,
-            n_embd=n_embd,
-            head_size=head_size,
-            block_size=block_size,
-            dropout=dropout,
-        )
-        self.feedforward = FeedForward(n_embd=n_embd, dropout=dropout)
-        self.ln1 = nn.LayerNorm(n_embd)
-        self.ln2 = nn.LayerNorm(n_embd)
+            if generated_count < self.block_size:
+                x = torch.cat(
+                    [
+                        seed[:, generated_count:],
+                        generated_tokens,
+                    ],
+                    dim=1,
+                )
+            else:
+                x = generated_tokens[:, (generated_count - self.block_size) :]
 
-    def forward(self, x):
-        x = x + self.self_attention(self.ln1(x))
-        x = x + self.feedforward(self.ln2(x))
-        return x
+            assert x.ndim == 2
+            assert x.shape[0] == B
+            assert x.shape[1] == T
 
+            logits = self(x, memory)[:, -1, :]
+            probs = F.softmax(logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
 
-# From https://github.com/pytorch/examples/blob/master/word_language_model/model.py
-class FixedPositionalEncoding(torch.nn.Module):
-    r"""Inject some information about the relative or absolute position of the tokens
-        in the sequence. The positional encodings have the same dimension as
-        the embeddings, so that the two can be summed. Here, we use sine and cosine
-        functions of different frequencies.
-    .. math::
-        \text{PosEncoder}(pos, 2i) = sin(pos/10000^(2i/d_model))
-        \text{PosEncoder}(pos, 2i+1) = cos(pos/10000^(2i/d_model))
-        \text{where pos is the word position and i is the embed idx)
-    Args:
-        d_model: the embed dim (required).
-        dropout: the dropout value (default=0.1).
-        max_len: the max. length of the incoming sequence (default=1024).
-    """
+            hour_counts += (next_token == hourtokens.unsqueeze(0)).sum(dim=1)
+            # zero-out any event that happen after lookahead hours
+            # may help downstream tasks recognize when sequence has ended
+            # NOTE: this potentially wastes a lot of computation for large batches
+            next_token = next_token.squeeze() * (hour_counts <= lookahead_hrs)
+            generated_tokens = torch.cat(
+                (generated_tokens, next_token.unsqueeze(1)), dim=1
+            )
+            pass
 
-    def __init__(self, d_model, max_len, dropout=0.1, scale_factor=1.0):
-        super(FixedPositionalEncoding, self).__init__()
-        self.dropout = torch.nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, d_model)  # positional encoding
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = scale_factor * pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer(
-            "pe", pe
-        )  # this stores the variable in the state_dict (used for non-trainable variables)
-
-    def forward(self, x) -> torch.Tensor:
-        r"""Inputs of forward function
-        Args:
-            x: the sequence fed to the positional encoder model (required).
-        Shape:
-            x: [sequence length, batch size, embed dim]
-            output: [sequence length, batch size, embed dim]
-        """
-
-        x = x + self.pe[: x.size(0), :]  # type: ignore
-        return self.dropout(x)
+        return generated_tokens

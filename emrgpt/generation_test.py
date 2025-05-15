@@ -1,6 +1,6 @@
-from emrgpt.tokenModeling.model import TokenStreamGPT
-from emrgpt.tokenModeling.trainer import *
-from emrgpt.tokenModeling.data import TokenStreamDS
+from emrgpt.model import TokenStreamGPT
+from emrgpt.trainer import *
+from emrgpt.data import TokenStreamDS
 
 
 if __name__ == "__main__":

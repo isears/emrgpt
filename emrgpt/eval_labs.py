@@ -1,5 +1,5 @@
-from emrgpt.tokenModeling.model import TokenStreamGPT
-from emrgpt.tokenModeling.trainer import *
+from emrgpt.model import TokenStreamGPT
+from emrgpt.trainer import *
 from sklearn.metrics import roc_auc_score, average_precision_score
 from tqdm import tqdm
 from tabulate import tabulate
@@ -7,7 +7,7 @@ from tabulate import tabulate
 from torch.utils.data import Dataset
 import psycopg2
 import torch
-from emrgpt.tokenModeling.data import PostgresUtil
+from emrgpt.data import PostgresUtil
 
 
 class LabValueDS(Dataset):

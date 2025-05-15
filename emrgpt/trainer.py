@@ -5,8 +5,8 @@ import torch.nn.functional as F
 import warnings
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
-from emrgpt.tokenModeling.model import TokenStreamGPT
-from emrgpt.tokenModeling.data import TokenStreamDS
+from emrgpt.model import TokenStreamGPT
+from emrgpt.data import TokenStreamDS
 
 
 BLOCK_SIZE = 256
