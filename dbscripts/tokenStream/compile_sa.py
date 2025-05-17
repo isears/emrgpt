@@ -20,12 +20,15 @@ from sqlalchemy import (
     VARCHAR,
     and_,
     union_all,
+    case,
 )
 from sqlalchemy.sql import values, func, alias, lateral, true
 import os
 from dataclasses import dataclass
 from typing import Literal
 from sqlalchemy.dialects import postgresql
+import sys
+import datetime
 
 
 @dataclass
@@ -88,7 +91,8 @@ TTSs = [
         {"temperature": "temperature_site"},
     ),
     TableTokenizationSpec("crrt", "onetime"),
-    TableTokenizationSpec("norepinephrine_equivalent_dose", "infusion"),
+    # Don't need NED once inputevents fully integrated
+    # TableTokenizationSpec("norepinephrine_equivalent_dose", "infusion"),
     TableTokenizationSpec("chemistry", "onetime", ["aniongap"], needs_alignment=True),
     TableTokenizationSpec("complete_blood_count", "onetime", needs_alignment=True),
     TableTokenizationSpec("blood_differential", "onetime", needs_alignment=True),
@@ -115,6 +119,9 @@ TTSs = [
         needs_alignment=True,
     ),
 ]
+
+# 10 for deciles, 100 for percentiles, etc.
+PERCENTILE_MULTIPLIER = 10
 
 
 def build_table_stmt_onetime(tts: TableTokenizationSpec, table: Table):
@@ -353,7 +360,7 @@ if __name__ == "__main__":
                     partition_by=union_cte.c.token_label,
                     order_by=union_cte.c.token_value,
                 )
-                * 10
+                * PERCENTILE_MULTIPLIER
             )
             .cast(INTEGER)
             .label("token_value_disc"),
@@ -362,22 +369,100 @@ if __name__ == "__main__":
         .cte("token_values")
     )
 
-    # Convert to raw even stream rather than token, value pair stream
-    numbered_events_cte = (
+    # Do input events seperately
+    inputevents = Table(
+        "inputevents", metadata, autoload_with=engine, schema="mimiciv_icu"
+    )
+    d_items = Table("d_items", metadata, autoload_with=engine, schema="mimiciv_icu")
+
+    meds_cte = (
+        select(
+            inputevents.c.stay_id,
+            func.generate_series(
+                inputevents.c.starttime,
+                inputevents.c.endtime,
+                "1 hour",
+            ).label("charttime"),
+            d_items.c.label.label("token_label"),
+            inputevents.c.amountuom.label("uom_label"),
+            case(
+                (
+                    (inputevents.c.endtime - inputevents.c.starttime)
+                    > datetime.timedelta(hours=1),
+                    inputevents.c.amount
+                    / (
+                        extract(
+                            "epoch", inputevents.c.endtime - inputevents.c.starttime
+                        )
+                        / 3600
+                    ),
+                ),
+                else_=inputevents.c.amount,
+            ).label("dose"),
+        )
+        .select_from(inputevents)
+        .join(d_items, d_items.c.itemid == inputevents.c.itemid)
+    ).cte("meds")
+
+    med_values_cte = select(
+        meds_cte.c.stay_id,
+        meds_cte.c.charttime,
+        meds_cte.c.token_label,
+        meds_cte.c.uom_label,
+        meds_cte.c.dose,
+        func.floor(
+            func.percent_rank().over(
+                partition_by=(meds_cte.c.token_label, meds_cte.c.uom_label),
+                order_by=meds_cte.c.dose,
+            )
+            * PERCENTILE_MULTIPLIER
+        )
+        .cast(INTEGER)
+        .label("token_value_disc"),
+    ).cte("med_values")
+
+    med_derived_events_combined_cte = union_all(
+        select(
+            med_values_cte.c.stay_id,
+            med_values_cte.c.charttime,
+            med_values_cte.c.token_label,
+            med_values_cte.c.dose.label("token_value"),
+            med_values_cte.c.token_value_disc,
+            med_values_cte.c.uom_label,
+        ).select_from(med_values_cte),
         select(
             token_value_cte.c.stay_id,
             token_value_cte.c.charttime,
             token_value_cte.c.token_label,
             token_value_cte.c.token_value,
             token_value_cte.c.token_value_disc,
+            literal(None).label("uom_label"),
+        ).select_from(token_value_cte),
+    ).cte("med_derived_events_combined")
+
+    # Convert to raw event stream rather than token, value pair stream
+    numbered_events_cte = (
+        select(
+            med_derived_events_combined_cte.c.stay_id,
+            med_derived_events_combined_cte.c.charttime,
+            med_derived_events_combined_cte.c.token_label,
+            med_derived_events_combined_cte.c.token_value,
+            med_derived_events_combined_cte.c.token_value_disc,
+            med_derived_events_combined_cte.c.uom_label,
             func.row_number()
             .over(
-                partition_by=(token_value_cte.c.stay_id, token_value_cte.c.charttime),
-                order_by=(token_value_cte.c.token_label, token_value_cte.c.token_value),
+                partition_by=(
+                    med_derived_events_combined_cte.c.stay_id,
+                    med_derived_events_combined_cte.c.charttime,
+                ),
+                order_by=(
+                    med_derived_events_combined_cte.c.token_label,
+                    med_derived_events_combined_cte.c.token_value_disc,
+                ),
             )
             .label("event_idx"),
         )
-        .select_from(token_value_cte)
+        .select_from(med_derived_events_combined_cte)
         .cte("numbered_events")
     )
 
@@ -393,12 +478,21 @@ if __name__ == "__main__":
             select(
                 numbered_events_cte.c.stay_id,
                 numbered_events_cte.c.charttime,
+                numbered_events_cte.c.uom_label.label("token"),
+                numbered_events_cte.c.event_idx,
+                literal(2).label("sort_order"),
+            )
+            .select_from(numbered_events_cte)
+            .where(numbered_events_cte.c.uom_label != None),
+            select(
+                numbered_events_cte.c.stay_id,
+                numbered_events_cte.c.charttime,
                 func.concat(
                     literal("magnitude."),
                     cast(numbered_events_cte.c.token_value_disc, TEXT),
                 ).label("token"),
                 numbered_events_cte.c.event_idx,
-                literal(2).label("sort_order"),
+                literal(3).label("sort_order"),
             )
             .select_from(numbered_events_cte)
             .where(numbered_events_cte.c.token_value != None),
@@ -429,6 +523,7 @@ if __name__ == "__main__":
         token_stream_cte.c.token,
     ).join(d_tokens_cte, d_tokens_cte.c.token == token_stream_cte.c.token)
 
+    print(f"-- Do not edit directly: autogenerated sql")
     print("DROP TABLE IF EXISTS mimiciv_local.tokenevents;")
     print("CREATE TABLE mimiciv_local.tokenevents AS (")
     print(
