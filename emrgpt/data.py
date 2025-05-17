@@ -48,8 +48,8 @@ class PostgresUtil:
 
         res = cursor.fetchall()
         # TODO: will need to add more complex logic once have more drugs
-        # For now manually +1 for norepi and +1 for icu_los
-        self.memory_size = res[0][0] + 2
+        # For now manually +1 for icu_los
+        self.memory_size = res[0][0] + 1
 
         c.close()
 
@@ -95,36 +95,16 @@ class PostgresUtil:
         static_feats["height"] = static_feats["height"] / 200
         static_feats["weight"] = np.log(static_feats["weight"] + 1) / np.log(635)
 
-        # TODO: for now just looking for norepinephrine outside the context window
-        # Will have to be more thorough about this in the future when have more meds
-        last_dose = 0.0
         los_hours = 0.0
         if history is not None:
-            indices = (
-                history == self.token2id_map["norepinephrine_equivalent_dose.rate"]
-            ).nonzero(as_tuple=True)[0]
-
-            # Get the last one
-            if indices.numel() > 0:
-                last_index = indices[-1].item()
-
-                if last_index != len(history) - 1:
-                    last_dose_token = self.id2token_map[history[last_index + 1].item()]
-                else:
-                    last_dose_token = self.id2token_map[X[0].item()]
-
-                assert last_dose_token.startswith("magnitude.")
-                last_dose = int(last_dose_token.split(".")[-1]) / 10
-                assert last_dose >= 0 and last_dose <= 1
 
             # Count # of hour events that have transpired in history
             los_hours = (history.unsqueeze(0) == self._hourtokens.unsqueeze(1)).sum()
             # Also log-normalizing los-icu
-            # TODO: actually assign this!
             los_hours = np.log(los_hours + 1) / np.log(5434)
 
         memory = torch.tensor(
-            list(static_feats.values()) + [last_dose, los_hours], dtype=torch.float
+            list(static_feats.values()) + [los_hours], dtype=torch.float
         )
 
         assert len(memory) == self.memory_size
@@ -205,7 +185,7 @@ class TokenStreamDS(Dataset):
 
         assert len(X) == self.block_size
         assert len(y) == self.block_size + 1
-        assert len(memory) == self.memory_size
+        assert len(memory) == self.postgresUtil.memory_size
 
         return X, memory, y
 
