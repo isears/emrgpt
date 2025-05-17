@@ -1,10 +1,8 @@
-from torch.utils.data import Dataset, DataLoader, Subset, random_split
+from torch.utils.data import DataLoader, random_split
 import torch
 from torchinfo import summary
 import torch.nn.functional as F
-import warnings
 from tqdm import tqdm
-from sklearn.metrics import roc_auc_score
 from emrgpt.model import TokenStreamGPT
 from emrgpt.data import TokenStreamDS
 
@@ -62,7 +60,11 @@ if __name__ == "__main__":
         model,
         input_data=(
             torch.zeros((BATCH_SIZE, BLOCK_SIZE), dtype=torch.long, device=DEVICE),
-            torch.zeros((BATCH_SIZE, ds.memory_size), dtype=torch.float, device=DEVICE),
+            torch.zeros(
+                (BATCH_SIZE, ds.postgresUtil.memory_size),
+                dtype=torch.float,
+                device=DEVICE,
+            ),
         ),
     )
 
