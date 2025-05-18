@@ -1,3 +1,17 @@
+"""
+Evaluates how good the GPT is at guessing labs at lab-draw time
+
+Targets:
+- Potassium (high / low)
+- Glucose (high / low)
+- Creatinine (high)
+- Troponin (high)
+- Hemoglobin / hematocrit (low)
+
+Inclusion criteria:
+- Test set
+"""
+
 from emrgpt.model import TokenStreamGPT
 from emrgpt.trainer import *
 from sklearn.metrics import roc_auc_score, average_precision_score
