@@ -7,14 +7,14 @@ from emrgpt.model import TokenStreamGPT
 from emrgpt.data import TokenStreamDS
 
 
-BLOCK_SIZE = 256
+BLOCK_SIZE = 512
 MAX_EPOCHS = 50
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 64
 DEVICE = "cuda"
 N_HEAD = 6
 N_LAYER = 6
-N_EMBD = 384
+N_EMBD = 128
 DROPOUT = 0.2
 DL_WORKERS = 12
 VAL_CHECK_INTERVAL = 200
