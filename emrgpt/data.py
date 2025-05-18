@@ -176,10 +176,10 @@ class TokenStreamDS(Dataset):
         y = token_stream[start_idx : truncation_idx + 1]
 
         if len(X) < self.block_size:
-            X = torch.nn.functional.pad(X, (self.block_size - len(X), 0))
+            X = torch.nn.functional.pad(X, (0, self.block_size - len(X)))
 
         if len(y) < self.block_size + 1:
-            y = torch.nn.functional.pad(y, ((self.block_size + 1) - len(y), 0))
+            y = torch.nn.functional.pad(y, (0, (self.block_size + 1) - len(y)))
 
         memory = self.postgresUtil._build_memory_vector(stay_id, X, history)
 
