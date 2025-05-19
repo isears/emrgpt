@@ -144,7 +144,11 @@ class PostgresUtil:
         return token_stream
 
     def _get_tokens_mem(
-        self, stay_id: int, block_size: int, limit: datetime.datetime = None
+        self,
+        stay_id: int,
+        block_size: int,
+        pad: bool,
+        limit: datetime.datetime = None,
     ):
         token_stream = self._get_token_stream(stay_id, limit)
 
@@ -153,9 +157,13 @@ class PostgresUtil:
             token_block = token_stream[start_idx:]
             history = token_stream[0:start_idx]
         elif len(token_stream) < block_size:
-            token_block = torch.nn.functional.pad(
-                token_stream, (block_size - len(token_stream), 0)
-            )
+            if pad:
+                token_block = torch.nn.functional.pad(
+                    token_stream, (block_size - len(token_stream), 0)
+                )
+            else:
+                token_block = token_stream
+
             history = None
         else:
             token_block = token_stream

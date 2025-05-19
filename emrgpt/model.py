@@ -96,7 +96,7 @@ class TokenStreamGPT(nn.Module):
 
         return generated_tokens
 
-    def generate_one(self, seed: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
+    def generate_next(self, seed: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
         assert seed.ndim == 2
         B, T = seed.shape
 
@@ -105,3 +105,42 @@ class TokenStreamGPT(nn.Module):
         next_token = torch.multinomial(probs, num_samples=1)
 
         return next_token
+
+    def generate_nonbatch(
+        self,
+        seed: torch.Tensor,
+        memory: torch.Tensor,
+        lookahead_hrs: int,
+        hourtokens: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        assert seed.ndim == 1
+
+        generated_tokens = torch.tensor([], dtype=torch.long, device=seed.device)
+        hour_count = 0
+        generated_count = 0
+        hourtokens = hourtokens.to(seed.device)
+        probs_accumulated = torch.zeros((self.vocab_size,), device=seed.device)
+
+        while not (hour_count >= lookahead_hrs):
+            # TODO: need some way to update memory
+
+            if generated_count < self.block_size:
+                x = torch.cat(
+                    [
+                        seed[generated_count:],
+                        generated_tokens,
+                    ]
+                )
+            else:
+                x = generated_tokens[(generated_count - self.block_size) :]
+
+            logits = self(x.unsqueeze(0), memory.unsqueeze(0))[0, -1, :]
+            probs = F.softmax(logits, dim=0)
+            probs_accumulated += probs
+            next_token = torch.multinomial(probs, num_samples=1)
+
+            hour_count += (next_token == hourtokens).sum()
+            generated_tokens = torch.cat((generated_tokens, next_token))
+            generated_count += 1
+
+        return generated_tokens, probs_accumulated / generated_count

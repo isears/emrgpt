@@ -18,6 +18,10 @@ from torch.utils.data import Dataset
 from emrgpt.data import PostgresUtil
 import psycopg2
 import torch
+from emrgpt.model import TokenStreamGPT
+from emrgpt.trainer import *
+from sklearn.metrics import roc_auc_score, average_precision_score
+from tqdm import tqdm
 
 
 # TODO
@@ -76,7 +80,44 @@ class OvernightBlood(Dataset):
 
 
 if __name__ == "__main__":
+
+    model_path = "./cache/TokenStreamGPT.pt"
+
     ds = OvernightBlood(block_size=512)
 
-    for x, mem, y in ds:
-        print(".")
+    model = TokenStreamGPT(
+        vocab_size=ds.pgutil.vocab_size,
+        memory_size=ds.pgutil.memory_size,
+        n_embd=N_EMBD,
+        dropout=DROPOUT,
+        block_size=BLOCK_SIZE,
+        n_layer=N_LAYER,
+        n_head=N_HEAD,
+    )
+
+    model.load_state_dict(torch.load(model_path))
+    model.eval()
+    model = model.to("cuda")
+
+    y_true = list()
+    y_pred = list()
+
+    for X, mem, y in tqdm(ds):
+        with torch.no_grad():
+            _, probs = model.generate_nonbatch(
+                X.to("cuda"),
+                mem.to("cuda"),
+                lookahead_hrs=12,
+                hourtokens=ds.pgutil._hourtokens,
+            )
+
+        y_true.append(y.item())
+        y_pred.append(
+            probs[ds.pgutil.token2id_map["Packed Red Blood Cells"]]
+            .detach()
+            .cpu()
+            .item()
+        )
+
+    print(f"AUROC: {roc_auc_score(y_true, y_pred)}")
+    print(f"AUPRC: {average_precision_score(y_true, y_pred)}")

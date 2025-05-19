@@ -205,7 +205,7 @@ def simulate_overdose(
                 block_size=BLOCK_SIZE,
             )
 
-            next_token = model.generate_one(
+            next_token = model.generate_next(
                 future_stream.unsqueeze(0), mem.unsqueeze(0).to(DEVICE)
             ).squeeze(dim=0)
 
