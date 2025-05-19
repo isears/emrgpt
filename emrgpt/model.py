@@ -53,7 +53,7 @@ class TokenStreamGPT(nn.Module):
     ) -> torch.Tensor:
         assert seed.ndim == 2
         B, T = seed.shape
-        assert T == self.block_size
+        # assert T == self.block_size
 
         generated_tokens = torch.tensor([], dtype=torch.long, device=seed.device)
         hour_counts = torch.zeros((B,), dtype=torch.int, device=seed.device)
@@ -93,6 +93,15 @@ class TokenStreamGPT(nn.Module):
             generated_tokens = torch.cat(
                 (generated_tokens, next_token.unsqueeze(1)), dim=1
             )
-            pass
 
         return generated_tokens
+
+    def generate_one(self, seed: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
+        assert seed.ndim == 2
+        B, T = seed.shape
+
+        logits = self(seed, memory)[:, -1, :]
+        probs = F.softmax(logits, dim=-1)
+        next_token = torch.multinomial(probs, num_samples=1)
+
+        return next_token
