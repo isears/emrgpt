@@ -4,6 +4,7 @@ import psycopg2.extras
 import atexit
 import torch
 import numpy as np
+import datetime
 
 
 class PostgresUtil:
@@ -110,22 +111,59 @@ class PostgresUtil:
         assert len(memory) == self.memory_size
         return memory
 
-    def _get_token_stream(self, stay_id: int):
+    def _get_token_stream(self, stay_id: int, limit: datetime.datetime = None):
         self._lazy_init()
         cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            --sql
-            SELECT token_id
-            FROM mimiciv_local.tokenevents
-            WHERE stay_id = %s;
-            """,
-            (stay_id,),
-        )
+
+        if limit:
+            cursor.execute(
+                """
+                --sql
+                SELECT token_id
+                FROM mimiciv_local.tokenevents
+                WHERE stay_id = %s AND charttime < %s;
+                """,
+                (
+                    stay_id,
+                    limit,
+                ),
+            )
+        else:
+            cursor.execute(
+                """
+                --sql
+                SELECT token_id
+                FROM mimiciv_local.tokenevents
+                WHERE stay_id = %s;
+                """,
+                (stay_id,),
+            )
 
         res = cursor.fetchall()
         token_stream = torch.tensor(res, dtype=torch.long).flatten()
         return token_stream
+
+    def _get_tokens_mem(
+        self, stay_id: int, block_size: int, limit: datetime.datetime = None
+    ):
+        token_stream = self._get_token_stream(stay_id, limit)
+
+        if len(token_stream) > block_size:
+            start_idx = len(token_stream) - block_size
+            token_block = token_stream[start_idx:]
+            history = token_stream[0:start_idx]
+        elif len(token_stream) < block_size:
+            token_block = torch.nn.functional.pad(
+                token_stream, (block_size - len(token_stream), 0)
+            )
+            history = None
+        else:
+            token_block = token_stream
+            history = None
+
+        memory = self._build_memory_vector(stay_id, token_block, history)
+
+        return token_block, memory
 
 
 class TokenStreamDS(Dataset):
@@ -176,9 +214,11 @@ class TokenStreamDS(Dataset):
         y = token_stream[start_idx : truncation_idx + 1]
 
         if len(X) < self.block_size:
+            # TODO: change this to left pad instead of right pad
             X = torch.nn.functional.pad(X, (0, self.block_size - len(X)))
 
         if len(y) < self.block_size + 1:
+            # TODO: Also here
             y = torch.nn.functional.pad(y, (0, (self.block_size + 1) - len(y)))
 
         memory = self.postgresUtil._build_memory_vector(stay_id, X, history)

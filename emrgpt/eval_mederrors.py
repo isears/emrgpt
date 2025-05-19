@@ -6,6 +6,18 @@ Errors:
 - Supplemental potassium iso hyperkalemia
 - Warfarin overdose
 
+TODO: to improve performance on this type of out-of-distribution inference test,
+may have to manually build out some examples
+
+E.g.:
+- Take a random ICU stay
+- Insert insulin overdose sequence randomly
+- Insert sequence of response tokens:
+    - Fingerstick blood glucose mag.0
+    - Chem 7 w/hypoK, hypoglycemia, etc.
+    - Ultimately ending in mort token
+- Should base the response sequence on case reports
+- Should add slight random variations to each example
 """
 
 from torch.utils.data import Dataset, DataLoader
