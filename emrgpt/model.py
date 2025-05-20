@@ -96,7 +96,9 @@ class TokenStreamGPT(nn.Module):
 
         return generated_tokens
 
-    def generate_next(self, seed: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
+    def generate_next(
+        self, seed: torch.Tensor, memory: torch.Tensor, return_probs: bool = False
+    ) -> torch.Tensor:
         assert seed.ndim == 2
         B, T = seed.shape
 
@@ -104,8 +106,15 @@ class TokenStreamGPT(nn.Module):
         probs = F.softmax(logits, dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
 
-        return next_token
+        if return_probs:
+            return next_token, probs
+        else:
+            return next_token
 
+    # TODO: I suspect this occassionally hangs when the model falls into a
+    # trap where it generates a sequence with no hour tokens
+    # Should specify a max_tokens_per_hour thing and manually insert them
+    # to ensure no hangs
     def generate_nonbatch(
         self,
         seed: torch.Tensor,
