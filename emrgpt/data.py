@@ -121,7 +121,7 @@ class PostgresUtil:
                 --sql
                 SELECT token_id
                 FROM mimiciv_local.tokenevents
-                WHERE stay_id = %s AND charttime < %s;
+                WHERE stay_id = %s AND charttime <= %s;
                 """,
                 (
                     stay_id,
@@ -147,7 +147,7 @@ class PostgresUtil:
         self,
         stay_id: int,
         block_size: int,
-        pad: bool,
+        pad: bool = True,
         limit: datetime.datetime = None,
     ):
         token_stream = self._get_token_stream(stay_id, limit)
