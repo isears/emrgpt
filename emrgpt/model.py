@@ -1,37 +1,43 @@
 from emrgpt.ak_transformer import *
+from dataclasses import dataclass
+
+
+@dataclass
+class TokenStreamGptConfig:
+    vocab_size: int
+    memory_size: int
+    n_embd: int
+    dropout: float
+    block_size: int
+    n_layer: int
+    n_head: int
 
 
 class TokenStreamGPT(nn.Module):
 
-    def __init__(
-        self,
-        vocab_size: int,
-        memory_size: int,
-        n_embd: int,
-        dropout: float,
-        block_size: int,
-        n_layer: int,
-        n_head: int,
-    ):
+    def __init__(self, conf: TokenStreamGptConfig):
         super().__init__()
 
-        self.block_size = block_size
-        self.n_embd = n_embd
-        self.vocab_size = vocab_size
+        self.conf = conf
 
-        self.embedding_table = nn.Embedding(vocab_size, n_embd)
-        self.memory_projection = nn.Linear(memory_size, n_embd)
+        self.embedding_table = nn.Embedding(self.conf.vocab_size, self.conf.n_embd)
+        self.memory_projection = nn.Linear(self.conf.memory_size, self.conf.n_embd)
         self.positional_encoding = FixedPositionalEncoding(
-            n_embd, block_size + 1, dropout
+            self.conf.n_embd, self.conf.block_size + 1, self.conf.dropout
         )
         self.blocks = nn.Sequential(
             *[
-                AkDecoderBlock(n_embd, n_head, block_size + 1, dropout)
-                for _ in range(n_layer)
+                AkDecoderBlock(
+                    self.conf.n_embd,
+                    self.conf.n_head,
+                    self.conf.block_size + 1,
+                    self.conf.dropout,
+                )
+                for _ in range(self.conf.n_layer)
             ]
         )
-        self.ln_f = nn.LayerNorm(n_embd)
-        self.lm_head = nn.Linear(n_embd, vocab_size)
+        self.ln_f = nn.LayerNorm(self.conf.n_embd)
+        self.lm_head = nn.Linear(self.conf.n_embd, self.conf.vocab_size)
 
     def forward(self, x: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
         x_embd = self.embedding_table(x)  # (B,T,C)
@@ -64,9 +70,7 @@ class TokenStreamGPT(nn.Module):
                 generated_tokens.shape[1] if generated_tokens.ndim == 2 else 0
             )
 
-            # TODO: need some way to update memory
-
-            if generated_count < self.block_size:
+            if generated_count < self.conf.block_size:
                 x = torch.cat(
                     [
                         seed[:, generated_count:],
@@ -75,7 +79,7 @@ class TokenStreamGPT(nn.Module):
                     dim=1,
                 )
             else:
-                x = generated_tokens[:, (generated_count - self.block_size) :]
+                x = generated_tokens[:, (generated_count - self.conf.block_size) :]
 
             assert x.ndim == 2
             assert x.shape[0] == B
@@ -128,12 +132,12 @@ class TokenStreamGPT(nn.Module):
         hour_count = 0
         generated_count = 0
         hourtokens = hourtokens.to(seed.device)
-        probs_accumulated = torch.zeros((self.vocab_size,), device=seed.device)
+        probs_accumulated = torch.zeros((self.conf.vocab_size,), device=seed.device)
 
         while not (hour_count >= lookahead_hrs):
             # TODO: need some way to update memory
 
-            if generated_count < self.block_size:
+            if generated_count < self.conf.block_size:
                 x = torch.cat(
                     [
                         seed[generated_count:],
@@ -141,7 +145,7 @@ class TokenStreamGPT(nn.Module):
                     ]
                 )
             else:
-                x = generated_tokens[(generated_count - self.block_size) :]
+                x = generated_tokens[(generated_count - self.conf.block_size) :]
 
             logits = self(x.unsqueeze(0), memory.unsqueeze(0))[0, -1, :]
             probs = F.softmax(logits, dim=0)
@@ -153,3 +157,21 @@ class TokenStreamGPT(nn.Module):
             generated_count += 1
 
         return generated_tokens, probs_accumulated / generated_count
+
+    def save(self, path: str, training_metadata: dict = None):
+        save_data = {
+            "state_dict": self.state_dict(),
+            "config": self.conf,
+            "meta": training_metadata,
+        }
+
+        torch.save(save_data, path)
+
+    @classmethod
+    def load(cls, path: str) -> "TokenStreamGPT":
+        save_data = torch.load(path, weights_only=False)
+
+        model = cls(conf=save_data["config"])
+        model.load_state_dict(save_data["state_dict"])
+
+        return model

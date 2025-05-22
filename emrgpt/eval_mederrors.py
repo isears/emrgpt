@@ -226,21 +226,10 @@ def simulate_overdose(
 
 if __name__ == "__main__":
 
-    model_path = "./cache/TokenStreamGPT.pt"
+    model = TokenStreamGPT.load("cache/TokenStreamGPT.ckpt")
 
-    ds = InsulinOverdoseDS(block_size=BLOCK_SIZE)
+    ds = InsulinOverdoseDS(block_size=model.conf.block_size)
 
-    model = TokenStreamGPT(
-        vocab_size=ds.pgutil.vocab_size,
-        memory_size=ds.pgutil.memory_size,
-        n_embd=N_EMBD,
-        dropout=DROPOUT,
-        block_size=BLOCK_SIZE,
-        n_layer=N_LAYER,
-        n_head=N_HEAD,
-    )
-
-    model.load_state_dict(torch.load(model_path))
     model.eval()
     model = model.to("cuda")
 

@@ -3,7 +3,7 @@ import torch
 from torchinfo import summary
 import torch.nn.functional as F
 from tqdm import tqdm
-from emrgpt.model import TokenStreamGPT
+from emrgpt.model import TokenStreamGPT, TokenStreamGptConfig
 from emrgpt.data import TokenStreamDS
 
 
@@ -47,13 +47,15 @@ if __name__ == "__main__":
     val_dl = DataLoader(val_ds, batch_size=BATCH_SIZE, num_workers=DL_WORKERS)
 
     model = TokenStreamGPT(
-        vocab_size=ds.postgresUtil.vocab_size,
-        memory_size=ds.postgresUtil.memory_size,
-        n_embd=N_EMBD,
-        block_size=BLOCK_SIZE,
-        n_head=N_HEAD,
-        n_layer=N_LAYER,
-        dropout=DROPOUT,
+        conf=TokenStreamGptConfig(
+            vocab_size=ds.postgresUtil.vocab_size,
+            memory_size=ds.postgresUtil.memory_size,
+            n_embd=N_EMBD,
+            block_size=BLOCK_SIZE,
+            n_head=N_HEAD,
+            n_layer=N_LAYER,
+            dropout=DROPOUT,
+        )
     ).to(DEVICE)
 
     summary(
@@ -87,13 +89,15 @@ if __name__ == "__main__":
                 avg_val_loss = sum(val_losses) / len(val_losses)
 
                 if avg_val_loss < best_val_loss:
-                    # print(f"{avg_val_loss} < {best_val_loss}, saving checkpoint")
                     best_val_loss = avg_val_loss
-                    torch.save(
-                        model.state_dict(),
-                        f"cache/savedmodels/{model.__class__.__name__}.pt",
+                    model.save(
+                        f"cache/savedmodels/{model.__class__.__name__}.ckpt",
+                        training_metadata={
+                            "step": batchnum,
+                            "epoch": epoch,
+                            "val_loss": avg_val_loss,
+                        },
                     )
-
                     print(f"Step {batchnum:04d} validation loss: {avg_val_loss} (*)")
                 else:
                     print(f"Step {batchnum:04d} validation loss: {avg_val_loss}")

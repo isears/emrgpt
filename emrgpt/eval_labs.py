@@ -96,7 +96,6 @@ class LabValueDS(Dataset):
 
 
 if __name__ == "__main__":
-    model_path = "./cache/TokenStreamGPT.pt"
 
     results = {}
 
@@ -109,24 +108,14 @@ if __name__ == "__main__":
         "complete_blood_count.hematocrit",
     ]:
         print(f"Evaluating: {target_token}")
-        ds = LabValueDS(BLOCK_SIZE, target_token=target_token)
+        model = TokenStreamGPT.load("cache/TokenStreamGPT.ckpt")
+        ds = LabValueDS(model.conf.block_size, target_token=target_token)
         dl = DataLoader(
             ds,
             batch_size=BATCH_SIZE,
             num_workers=DL_WORKERS,
         )
 
-        model = TokenStreamGPT(
-            vocab_size=ds.pgutil.vocab_size,
-            memory_size=ds.pgutil.memory_size,
-            n_embd=N_EMBD,
-            dropout=DROPOUT,
-            block_size=BLOCK_SIZE,
-            n_layer=N_LAYER,
-            n_head=N_HEAD,
-        )
-
-        model.load_state_dict(torch.load(model_path))
         model.eval()
         model = model.to("cuda")
 
