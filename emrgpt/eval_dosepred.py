@@ -65,7 +65,7 @@ class MedDoseDS(Dataset):
         assert should_be_magnitude_token.startswith("magnitude.")
         magnitude = int(should_be_magnitude_token.split(".")[-1])
 
-        y = torch.zeros((10,), dtype=int)
+        y = torch.zeros((10,), dtype=torch.int)
         y[magnitude] = 1
 
         token_stream = token_stream[:last_med_index]

@@ -1,0 +1,87 @@
+*** EMR GPT ***
+Evaluating: Insulin - Regular
+100%|████████████████████████████████████████████████████████████████████████████████| 1020/1020 [04:23<00:00,  3.87it/s]
+Evaluating: Coumadin (Warfarin)
+100%|██████████████████████████████████████████████████████████████████████████████████████| 6/6 [00:02<00:00,  2.46it/s]
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Evaluating: Argatroban
+100%|████████████████████████████████████████████████████████████████████████████████████| 42/42 [00:11<00:00,  3.73it/s]
+Evaluating: KCL (Bolus)
+100%|██████████████████████████████████████████████████████████████████████████████████| 381/381 [01:38<00:00,  3.87it/s]
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Evaluating: Digoxin (Lanoxin)
+100%|██████████████████████████████████████████████████████████████████████████████████████| 3/3 [00:01<00:00,  1.94it/s]
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:375: UndefinedMetricWarning: Only one class is present in y_true. ROC AUC score is not defined in that case.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+/home/isears/VirtualEnvironments/dl/lib/python3.12/site-packages/sklearn/metrics/_ranking.py:1027: UserWarning: No positive class found in y_true, recall is set to one for all thresholds.
+  warnings.warn(
+Evaluating: Fentanyl
+100%|██████████████████████████████████████████████████████████████████████████████████| 504/504 [02:10<00:00,  3.87it/s]
+---------------------------------  ----------
+Insulin - Regular overall AUROC      0.935823
+Insulin - Regular overall AUPRC      0.744242
+Insulin - Regular 90%-ile AUROC      0.968459
+Insulin - Regular 90%-ile AUPRC      0.820939
+Coumadin (Warfarin) overall AUROC  nan
+Coumadin (Warfarin) overall AUPRC    0.189501
+Coumadin (Warfarin) 90%-ile AUROC    0.697125
+Coumadin (Warfarin) 90%-ile AUPRC    0.071134
+Argatroban overall AUROC             0.987965
+Argatroban overall AUPRC             0.919814
+Argatroban 90%-ile AUROC             0.968197
+Argatroban 90%-ile AUPRC             0.653418
+KCL (Bolus) overall AUROC          nan
+KCL (Bolus) overall AUPRC            0.188212
+KCL (Bolus) 90%-ile AUROC            0.965113
+KCL (Bolus) 90%-ile AUPRC            0.887557
+Digoxin (Lanoxin) overall AUROC    nan
+Digoxin (Lanoxin) overall AUPRC      0.216968
+Digoxin (Lanoxin) 90%-ile AUROC      0.625767
+Digoxin (Lanoxin) 90%-ile AUPRC      0.104758
+Fentanyl overall AUROC               0.964846
+Fentanyl overall AUPRC               0.908212
+Fentanyl 90%-ile AUROC               0.968456
+Fentanyl 90%-ile AUPRC               0.872158
+---------------------------------  ----------
