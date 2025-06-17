@@ -5,6 +5,7 @@ import atexit
 import torch
 import numpy as np
 import datetime
+from typing import Optional
 
 
 class PostgresUtil:
@@ -66,11 +67,11 @@ class PostgresUtil:
             self.conn.close()
 
     def _build_memory_vector(
-        self, stay_id: int, X: torch.Tensor, history: torch.Tensor
+        self, stay_id: int, X: torch.Tensor, history: Optional[torch.Tensor]
     ):
         self._lazy_init()
 
-        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)  # type: ignore
         cursor.execute(
             """
             --sql
@@ -111,9 +112,11 @@ class PostgresUtil:
         assert len(memory) == self.memory_size
         return memory
 
-    def _get_token_stream(self, stay_id: int, limit: datetime.datetime = None):
+    def _get_token_stream(
+        self, stay_id: int, limit: Optional[datetime.datetime] = None
+    ):
         self._lazy_init()
-        cursor = self.conn.cursor()
+        cursor = self.conn.cursor()  # type: ignore
 
         if limit:
             cursor.execute(
@@ -148,7 +151,7 @@ class PostgresUtil:
         stay_id: int,
         block_size: int,
         pad: bool = True,
-        limit: datetime.datetime = None,
+        limit: Optional[datetime.datetime] = None,
     ):
         token_stream = self._get_token_stream(stay_id, limit)
 

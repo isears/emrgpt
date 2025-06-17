@@ -58,7 +58,7 @@ class OvernightBlood(Dataset):
             """
             --sql
             SELECT stay_id, shift_starttime, blood_given
-            FROM mimiciv_local.overnight_blood;
+            FROM mimiciv_local.overnight_blood LIMIT 1000;
             """
         )
 

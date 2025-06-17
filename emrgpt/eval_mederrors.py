@@ -84,6 +84,7 @@ class InsulinOverdoseDS(Dataset):
             "Insulin - Regular": [0] * 10,
             "Insulin - U500": [0] * 10,
         }
+        hour_truncation_idx = None
         for idx in range(0, len(token_stream)):
             curr_token = self.pgutil.id2token_map[token_stream[idx].item()]
 
@@ -107,6 +108,7 @@ class InsulinOverdoseDS(Dataset):
                 dose_magnitude = int(dose_token.split(".")[-1])
                 insulin_history[curr_token][dose_magnitude] += 1
 
+        assert hour_truncation_idx is not None
         first_24h = token_stream[0 : hour_truncation_idx + 1]
 
         if len(first_24h) > self.block_size:
@@ -206,7 +208,7 @@ def simulate_overdose(
             )
 
             next_token = model.generate_next(
-                future_stream.unsqueeze(0), mem.unsqueeze(0).to(DEVICE)
+                future_stream.unsqueeze(0), memory.unsqueeze(0).to(DEVICE)
             ).squeeze(dim=0)
 
             magnitude_token = pgutil.id2token_map[next_token.detach().cpu().item()]
@@ -237,7 +239,7 @@ if __name__ == "__main__":
     post_insulin_glucose = list()
     insulin_histories = list()
 
-    for X, mem, last_glucose, insulin_history in tqdm(ds):
+    for X, mem, last_glucose, insulin_history in tqdm(ds):  # type: ignore
         pre_insulin_glucose.append(last_glucose)
         post_insulin_glucose.append(
             simulate_overdose(model, X.to(DEVICE), mem.to(DEVICE), ds.pgutil)

@@ -1,5 +1,6 @@
 from emrgpt.ak_transformer import *
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -100,9 +101,7 @@ class TokenStreamGPT(nn.Module):
 
         return generated_tokens
 
-    def generate_next(
-        self, seed: torch.Tensor, memory: torch.Tensor, return_probs: bool = False
-    ) -> torch.Tensor:
+    def generate_next(self, seed: torch.Tensor, memory: torch.Tensor) -> torch.Tensor:
         assert seed.ndim == 2
         B, T = seed.shape
 
@@ -110,10 +109,7 @@ class TokenStreamGPT(nn.Module):
         probs = F.softmax(logits, dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
 
-        if return_probs:
-            return next_token, probs
-        else:
-            return next_token
+        return next_token
 
     # TODO: I suspect this occassionally hangs when the model falls into a
     # trap where it generates a sequence with no hour tokens
@@ -158,7 +154,7 @@ class TokenStreamGPT(nn.Module):
 
         return generated_tokens, probs_accumulated / generated_count
 
-    def save(self, path: str, training_metadata: dict = None):
+    def save(self, path: str, training_metadata: Optional[dict] = None):
         save_data = {
             "state_dict": self.state_dict(),
             "config": self.conf,
