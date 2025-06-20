@@ -91,7 +91,7 @@ if __name__ == "__main__":
     y_true = list()
     y_pred = list()
 
-    for X, mem, y in tqdm(ds):
+    for X, mem, y in tqdm(ds):  # type: ignore
         with torch.no_grad():
             _, probs = model.generate_nonbatch(
                 X.to("cuda"),
