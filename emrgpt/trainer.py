@@ -4,7 +4,7 @@ from torchinfo import summary
 import torch.nn.functional as F
 from tqdm import tqdm
 from emrgpt.model import TokenStreamGPT, TokenStreamGptConfig
-from emrgpt.data import TokenStreamDS
+from emrgptdata.mimic import TokenStreamDS
 
 
 BLOCK_SIZE = 512
