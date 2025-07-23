@@ -22,16 +22,23 @@ from torch.utils.data import Dataset
 import psycopg2
 import torch
 from emrgptdata.mimic import PostgresUtil
+from typing import Optional
 
 
 class LabValueDS(Dataset):
 
-    def __init__(self, block_size: int, target_token: str):
+    def __init__(
+        self,
+        block_size: int,
+        target_token: str,
+        expect_tokens: list[str],
+    ):
         super().__init__()
         self.pgutil = PostgresUtil()
         self.block_size = block_size
         self.target_token = target_token
         self.target_token_id = self.pgutil.token2id_map[target_token]
+        self.expect_tokens = expect_tokens
 
         c = psycopg2.connect("")
         cursor = c.cursor()
@@ -85,12 +92,20 @@ class LabValueDS(Dataset):
 
         # y with two classes per example: 10th percentile and 90th percentile
         val_token = self.pgutil.id2token_map[token_stream[truncation_idx].item()]
-        assert val_token.startswith("magnitude.")
-        actual_val = int(val_token.split(".")[-1])
-        # TODO: will have to redifine this if we move from deciles to percentiles
-        low_val = actual_val <= 0
-        high_val = actual_val >= 9
-        y = torch.tensor([low_val, high_val], dtype=torch.float)
+
+        if self.expect_tokens:
+            assert val_token in self.expect_tokens
+
+            # assert val_token.startswith("magnitude.")
+
+        # TODO: had to break this to make blood cultures work. Will come back later
+        # actual_val = int(val_token.split(".")[-1])
+        # # TODO: will have to redifine this if we move from deciles to percentiles
+        # low_val = actual_val <= 0
+        # high_val = actual_val >= 9
+        y = torch.tensor(
+            [val_token == t for t in self.expect_tokens], dtype=torch.float
+        )
 
         return X, memory, y
 
@@ -109,7 +124,11 @@ if __name__ == "__main__":
     ]:
         print(f"Evaluating: {target_token}")
         model = TokenStreamGPT.load("cache/TokenStreamGPT.ckpt")
-        ds = LabValueDS(model.conf.block_size, target_token=target_token)
+        ds = LabValueDS(
+            model.conf.block_size,
+            target_token=target_token,
+            expect_tokens=[f"magnitude.{i}" for i in range(0, 10)],
+        )
         dl = DataLoader(
             ds,
             batch_size=BATCH_SIZE,
