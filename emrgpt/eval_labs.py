@@ -96,13 +96,6 @@ class LabValueDS(Dataset):
         if self.expect_tokens:
             assert val_token in self.expect_tokens
 
-            # assert val_token.startswith("magnitude.")
-
-        # TODO: had to break this to make blood cultures work. Will come back later
-        # actual_val = int(val_token.split(".")[-1])
-        # # TODO: will have to redifine this if we move from deciles to percentiles
-        # low_val = actual_val <= 0
-        # high_val = actual_val >= 9
         y = torch.tensor(
             [val_token == t for t in self.expect_tokens], dtype=torch.float
         )
@@ -123,7 +116,7 @@ if __name__ == "__main__":
         "complete_blood_count.hematocrit",
     ]:
         print(f"Evaluating: {target_token}")
-        model = TokenStreamGPT.load("cache/TokenStreamGPT.ckpt")
+        model = TokenStreamGPT.load("cache/archivedmodels/TokenStreamGPT07232025.ckpt")
         ds = LabValueDS(
             model.conf.block_size,
             target_token=target_token,
@@ -150,7 +143,7 @@ if __name__ == "__main__":
                 logits = model(X.to("cuda"), mem.to("cuda"))[:, -1, :]
                 probs = F.softmax(logits, dim=-1)
 
-            y_actual.append(y)
+            y_actual.append(y[:, (0, -1)])
             y_preds.append(
                 torch.stack(
                     (probs[:, low_val_token_id], probs[:, high_val_token_id]), dim=1

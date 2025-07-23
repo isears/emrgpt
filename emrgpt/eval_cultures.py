@@ -26,7 +26,7 @@ from emrgpt.eval_labs import LabValueDS
 
 if __name__ == "__main__":
 
-    model = TokenStreamGPT.load("cache/archivedmodels/TokenStreamGPT.ckpt")
+    model = TokenStreamGPT.load("cache/archivedmodels/TokenStreamGPT07232025.ckpt")
     result_tokens = [
         "Gram Positive",
         "Gram Negative",
