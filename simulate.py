@@ -1,7 +1,7 @@
 from emrgpt.model import TokenStreamGPT
 import torch
 import random
-from emrgpt.data import TokenStreamDS
+from emrgptdata.mimic import TokenStreamDS
 
 
 if __name__ == "__main__":

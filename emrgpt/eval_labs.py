@@ -21,12 +21,12 @@ from tabulate import tabulate
 from torch.utils.data import Dataset
 import psycopg2
 import torch
-from emrgpt.data import PostgresUtil
+from emrgptdata.mimic import PostgresUtil
 
 
 class LabValueDS(Dataset):
 
-    def __init__(self, block_size: int, target_token: int):
+    def __init__(self, block_size: int, target_token: str):
         super().__init__()
         self.pgutil = PostgresUtil()
         self.block_size = block_size
@@ -81,7 +81,7 @@ class LabValueDS(Dataset):
         if len(X) < self.block_size:
             X = torch.nn.functional.pad(X, (self.block_size - len(X), 0))
 
-        memory = self.pgutil._build_memory_vector(stay_id, X, history)
+        memory = self.pgutil._build_memory_vector(stay_id, history)
 
         # y with two classes per example: 10th percentile and 90th percentile
         val_token = self.pgutil.id2token_map[token_stream[truncation_idx].item()]
@@ -90,7 +90,7 @@ class LabValueDS(Dataset):
         # TODO: will have to redifine this if we move from deciles to percentiles
         low_val = actual_val <= 0
         high_val = actual_val >= 9
-        y = torch.tensor([low_val, high_val], dtype=float)
+        y = torch.tensor([low_val, high_val], dtype=torch.float)
 
         return X, memory, y
 
