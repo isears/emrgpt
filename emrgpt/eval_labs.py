@@ -93,8 +93,8 @@ class LabValueDS(Dataset):
         # y with two classes per example: 10th percentile and 90th percentile
         val_token = self.pgutil.id2token_map[token_stream[truncation_idx].item()]
 
-        if self.expect_tokens:
-            assert val_token in self.expect_tokens
+        if val_token not in self.expect_tokens:
+            print(f"WARNING: got unexpected token {val_token}")
 
         y = torch.tensor(
             [val_token == t for t in self.expect_tokens], dtype=torch.float

@@ -71,6 +71,7 @@ if __name__ == "__main__":
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=25_000)
     best_val_loss = float("inf")
 
     for epoch in range(MAX_EPOCHS):
@@ -88,6 +89,8 @@ if __name__ == "__main__":
 
                 avg_val_loss = sum(val_losses) / len(val_losses)
 
+                # scheduler.step(avg_val_loss)
+
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     model.save(
@@ -98,9 +101,13 @@ if __name__ == "__main__":
                             "val_loss": avg_val_loss,
                         },
                     )
-                    print(f"Step {batchnum:04d} validation loss: {avg_val_loss} (*)")
+                    print(
+                        f"Step {batchnum:04d} validation loss: {avg_val_loss:5f}, LR: {scheduler.get_last_lr()} (*)"
+                    )
                 else:
-                    print(f"Step {batchnum:04d} validation loss: {avg_val_loss}")
+                    print(
+                        f"Step {batchnum:04d} validation loss: {avg_val_loss:5f}, LR: {scheduler.get_last_lr()}"
+                    )
 
                 model.train()
 
@@ -108,5 +115,6 @@ if __name__ == "__main__":
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=4.0)
             optimizer.step()
+        scheduler.step(epoch=epoch)
 
     print("Done")
